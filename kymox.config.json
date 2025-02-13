@@ -1,0 +1,25 @@
+{
+  "appName": "beatfly",
+  "version": "0.0.0",
+  "entry": "./electron/main.js",
+  "obfuscate": true,
+  "obfuscatorOptions": {
+    "compact": true,
+    "controlFlowFlattening": true,
+    "controlFlowFlatteningThreshold": 0.75
+  },
+  "buildTargets": [
+    "windows",
+    "linux",
+    "mac",
+    "single-js"
+  ],
+  "singleOutputJs": "dist/bundle.js",
+  "singleOutputTs": "dist/bundle-ts.js",
+  "windowsOutput": "dist/app_win.exe",
+  "linuxOutput": "dist/app_linux",
+  "macOutput": "dist/app_macos",
+  "packageZip": true,
+  "pkgAssets": [],
+  "rootDir": "/home/bluet/Documents/beatfly"
+}
