@@ -23,6 +23,7 @@ import AlbumEditor from './pages/AlbumEditor';
 import Track from './pages/Track';
 import Profile from './pages/Profile';
 import ArtistDashboard from './pages/ArtistDashboard';
+import Report from './pages/Report';
 
 
 const App = () => {
@@ -57,6 +58,7 @@ const App = () => {
               <Route path="album/:albumId" element={<AlbumDetail />} />
               <Route path="track/:trackId" element={<Track />} />
               <Route path="profile/:userId" element={<Profile />} />
+              <Route path="Report" element={<Report    />} />
 
               {/* Creation/Management */}
               <Route path="create-playlist" element={<CreatePlaylist />} />

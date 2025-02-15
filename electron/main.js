@@ -1,4 +1,3 @@
-// electron/main.js
 const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
 
@@ -15,37 +14,41 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       preload: path.join(__dirname, 'preload.js'),
-      webSecurity: true
+      webSecurity: false // Ensure this is what you intend; it disables some security features.
     }
   })
 
-  // Set CSP headers
+  // Update CSP to allow loading local file: resources
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
-          "default-src 'self' 'unsafe-inline' http://localhost:5000"
+          "default-src 'self' 'unsafe-inline' file: http://localhost:5000; media-src 'self' file: blob: http://localhost:5000"
         ]
       }
     })
   })
 
-  // Development or production loading
+  // Determine the correct path to load based on environment
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:3000')
     mainWindow.webContents.openDevTools()
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
+    // Use process.resourcesPath for production builds.
+    // Check that 'dist/index.html' actually exists in this folder.
+    const indexPath = path.join(process.resourcesPath, 'dist', 'index.html')
+    console.log('Loading index file from:', indexPath)
+    mainWindow.loadFile(indexPath)
   }
 
-  return mainWindow;
+  return mainWindow
 }
 
 app.whenReady().then(() => {
   const mainWindow = createWindow()
 
-  // Handle IPC messages
+  // IPC handlers for window controls
   ipcMain.on('minimize-window', () => mainWindow.minimize())
   ipcMain.on('maximize-window', () => {
     if (mainWindow.isMaximized()) mainWindow.unmaximize()

@@ -24,7 +24,6 @@ export const MusicAPI = {
   forgotPassword: (email) => api.post('/account.forgotPassword', { email }),
   resetPassword: (data) => api.post('/account.resetPassword', data),
 
-
   // ========== Music Management ==========
   createAlbum: (data) =>
     api.post('/music/album.create', data, {
@@ -44,7 +43,7 @@ export const MusicAPI = {
         Authorization: `Bearer ${token}`,
       },
     };
-  },  
+  },
 
   // ========== Playlist Management ==========
   getPlaylists: () => api.get('/music/playlists'),
@@ -63,7 +62,6 @@ export const MusicAPI = {
   unfavoriteAlbum: (albumId) => api.delete(`/music/favourite.album/${albumId}`),
   favoriteArtist: (artistId) => api.post('/music/favourite.artist', { artistId }),
   unfavoriteArtist: (artistId) => api.delete(`/music/favourite.artist/${artistId}`),
-  // <-- Add this function:
   getFavoriteTracks: () => api.get('/music/favourite.tracks'),
 
   // ========== Profile Management ==========
@@ -95,6 +93,12 @@ export const MusicAPI = {
     }
     return `http://localhost:5000/xrpc/images/${folder}/${imageName}`;
   },
+
+  // ========== Reporting ==========
+  reportArtist: (data) =>
+    api.post('/report.artist', data, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
 };
 
 export default MusicAPI;

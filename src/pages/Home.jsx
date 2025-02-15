@@ -1,11 +1,12 @@
-// src/pages/Home.jsx
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Play, Pause } from 'lucide-react';
 import { useAudio } from '../contexts/AudioContext';
+import { useNavigate } from 'react-router-dom';
 import MusicAPI from '../services/api';
 
 const Home = () => {
+  const navigate = useNavigate();
   const [featuredAlbums, setFeaturedAlbums] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -40,17 +41,36 @@ const Home = () => {
     }
   };
 
-  const handlePlayAlbum = async (albumId) => {
+  const handlePlayAlbum = async (albumId, event) => {
+    event.stopPropagation(); // Prevent navigation when clicking play button
     try {
       const response = await MusicAPI.getAlbum(albumId);
       const album = response.data;
       if (album.tracks?.[0]) {
-        const firstTrack = album.tracks[0];
-        await playTrack(firstTrack.id);
+        await playTrack({
+          id: album.tracks[0].id,
+          album_id: album.id,
+          title: album.tracks[0].title,
+          artist: album.tracks[0].artist,
+          file_path: album.tracks[0].file_path,
+          album_art: album.album_art
+        });
       }
     } catch (error) {
       console.error('Error playing album:', error);
     }
+  };
+
+  const handlePlayTrack = (track, event) => {
+    event.stopPropagation(); // Prevent navigation when clicking play button
+    playTrack({
+      id: track.id,
+      album_id: track.album_id,
+      title: track.title,
+      artist: track.artist,
+      file_path: track.file_path,
+      album_art: track.album_art || track.track_image
+    });
   };
 
   const getImageUrl = (path) => {
@@ -94,7 +114,8 @@ const Home = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               whileHover={{ scale: 1.05 }}
-              className="group relative"
+              className="group relative cursor-pointer"
+              onClick={() => navigate(`/album/${album.id}`)}
             >
               <div className="relative aspect-square rounded-lg overflow-hidden">
                 <img 
@@ -112,7 +133,7 @@ const Home = () => {
                 <motion.button
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
-                  onClick={() => handlePlayAlbum(album.id)}
+                  onClick={(e) => handlePlayAlbum(album.id, e)}
                   className="absolute bottom-4 right-4 w-12 h-12 bg-accent rounded-full 
                            flex items-center justify-center opacity-0 group-hover:opacity-100 
                            transition-all duration-300 transform translate-y-4 
@@ -146,11 +167,11 @@ const Home = () => {
               whileHover={{ scale: 1.01 }}
               className="bg-surface/50 hover:bg-surface p-4 rounded-lg flex items-center gap-4 
                        group transition-colors duration-200 cursor-pointer"
-              onClick={() => playTrack(track.id)}
+              onClick={() => navigate(`/track/${track.id}`)}
             >
               <div className="relative aspect-square w-16 rounded-md overflow-hidden">
                 <img 
-                  src={getImageUrl(track.track_image)}
+                  src={getImageUrl(track.album_art || track.track_image)}
                   alt={track.title}
                   className="w-full h-full object-cover"
                   onError={(e) => {
