@@ -5,7 +5,6 @@ import TitleBar from './TitleBar';
 import Sidebar from './Sidebar';
 import Player from './Player';
 
-// Create context for sidebar state
 export const SidebarContext = createContext(null);
 
 export const useSidebar = () => {
@@ -22,22 +21,21 @@ const MainLayout = () => {
   return (
     <SidebarContext.Provider value={{ isCollapsed, setIsCollapsed }}>
       <div className="flex flex-col h-screen bg-background">
-        {/* Title bar */}
         <TitleBar />
-
+        
         {/* Main content wrapper */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Sidebar - will now use the shared context */}
+          {/* Sidebar */}
           <Sidebar />
-
-          {/* Main content area - dynamically adjusts margin based on sidebar state */}
+          
+          {/* Main content area */}
           <motion.main
             initial={false}
             animate={{
               marginLeft: isCollapsed ? '5rem' : '16rem'
             }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="flex-1 overflow-y-auto mb-24"
+            className="flex-1 overflow-y-auto pb-24" // Added padding bottom for player
           >
             <Outlet />
           </motion.main>
@@ -50,4 +48,4 @@ const MainLayout = () => {
   );
 };
 
-export default MainLayout;  
+export default MainLayout;
