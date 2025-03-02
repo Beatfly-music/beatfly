@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:5000/xrpc',
+  baseURL: 'https://api.beatfly-music.xyz/xrpc',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -25,13 +25,36 @@ export const MusicAPI = {
   resetPassword: (data) => api.post('/account.resetPassword', data),
 
   // ========== Music Management ==========
-  createAlbum: (data) =>
-    api.post('/music/album.create', data, {
+  createAlbum: (data, progressCallback) => {
+    return api.post('/music/album.create', data, {
       headers: { 'Content-Type': 'multipart/form-data' },
-    }),
+      onUploadProgress: progressCallback
+    });
+  },
   getAlbum: (albumId) => api.get(`/music/album/${albumId}`),
   editAlbum: (albumId, data) => api.put(`/music/album.edit/${albumId}`, data),
   deleteAlbum: (albumId) => api.delete(`/music/album.delete/${albumId}`),
+
+  // ========== Individual Track Upload ==========
+  // Updated to match the new route using multer's single() middleware
+  addTrackToAlbum: (albumId, trackFile, metadata, progressCallback) => {
+    // Create a new FormData and append the track file with the correct field name
+    const formData = new FormData();
+    formData.append('trackFile', trackFile);
+    
+    // Add metadata fields
+    if (metadata) {
+      Object.keys(metadata).forEach(key => {
+        formData.append(key, metadata[key]);
+      });
+    }
+    
+    return api.post(`/music/album/${albumId}/track.add`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: progressCallback
+    });
+  },
+  deleteTrack: (albumId, trackId) => api.delete(`/music/album/${albumId}/track/${trackId}`),
 
   // ========== Track Management ==========
   getTrack: (trackId) => api.get(`/music/track/${trackId}`),
@@ -91,7 +114,7 @@ export const MusicAPI = {
     if (imageName.startsWith('uploads/')) {
       imageName = imageName.substring(imageName.lastIndexOf('/') + 1);
     }
-    return `http://localhost:5000/xrpc/images/${folder}/${imageName}`;
+    return `https://api.beatfly-music.xyz/xrpc/images/${folder}/${imageName}`;
   },
 
   // ========== Reporting ==========

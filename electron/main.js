@@ -24,7 +24,7 @@ function createWindow() {
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
-          "default-src 'self' 'unsafe-inline' file: http://localhost:5000; media-src 'self' file: blob: http://localhost:5000"
+          "default-src 'self' 'unsafe-inline' file: https://api.beatfly-music.xyz; media-src 'self' file: blob: https://api.beatfly-music.xyz"
         ]
       }
     })
@@ -39,7 +39,7 @@ function createWindow() {
     // Check that 'dist/index.html' actually exists in this folder.
     const indexPath = path.join(process.resourcesPath, 'dist', 'index.html')
     console.log('Loading index file from:', indexPath)
-    mainWindow.loadFile(indexPath)
+    mainWindow.loadURL("https://player.beatfly-music.xyz/");
   }
 
   return mainWindow
