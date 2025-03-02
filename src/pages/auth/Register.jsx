@@ -10,6 +10,7 @@ const Register = () => {
     password: '',
     confirmPassword: ''
   });
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState('');
   const { register } = useAuth();
   const navigate = useNavigate();
@@ -21,12 +22,21 @@ const Register = () => {
     }));
   };
 
+  const handleTermsChange = (e) => {
+    setAcceptedTerms(e.target.checked);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
+      return;
+    }
+
+    if (!acceptedTerms) {
+      setError('You must accept the Terms of Service before creating an account.');
       return;
     }
 
@@ -117,6 +127,37 @@ const Register = () => {
               className="mt-1 w-full rounded bg-surface-light border border-gray-600 px-4 py-2 text-white focus:border-accent focus:ring-1 focus:ring-accent"
               required
             />
+          </div>
+
+          {/* Terms of Service Section */}
+          <div className="bg-gray-800 border border-gray-700 p-4 rounded">
+            <h3 className="text-lg font-bold text-white mb-2">Terms of Service</h3>
+            <div className="h-32 overflow-y-auto mb-2 p-2 bg-gray-900 text-gray-300 text-sm rounded">
+              <p>
+                By registering, you agree to our Terms of Service. We collect and hold specific data such as likes, listens, and other information necessary for the operation of the service. 
+              </p>
+              <p className="mt-2">
+                Becoming an artist makes you solely responsible for ensuring that all music you upload complies with copyright laws. We reserve the right to remove any music or terminate your artist or personal account for any reason, including, but not limited to, violations of these Terms of Service.
+              </p>
+              <p className="mt-2">
+                You are prohibited from using our platform to pirate, reupload unauthorized music, or distribute any music intended to target, harass, or discriminate against individuals. Additionally, while the open-source nature of our platform allows for modifications, any changes must not compromise the security, integrity, or intended purpose of our community.
+              </p>
+              <p className="mt-2">
+                Any attempts to circumvent these rules or exploit loopholes may result in immediate account termination without notice.
+              </p>
+            </div>
+            <div className="flex items-center">
+              <input 
+                type="checkbox" 
+                id="tos" 
+                checked={acceptedTerms}
+                onChange={handleTermsChange}
+                className="h-4 w-4 text-accent border-gray-300 rounded focus:ring-accent"
+              />
+              <label htmlFor="tos" className="ml-2 text-gray-200 text-sm">
+                I agree to the Terms of Service
+              </label>
+            </div>
           </div>
 
           <button

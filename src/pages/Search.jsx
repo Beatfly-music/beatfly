@@ -23,6 +23,11 @@ const Search = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Show all toggles for each section
+  const [showAllTracks, setShowAllTracks] = useState(false);
+  const [showAllArtists, setShowAllArtists] = useState(false);
+  const [showAllAlbums, setShowAllAlbums] = useState(false);
+
   const handleSearch = useCallback(async (searchQuery) => {
     if (!searchQuery.trim()) {
       setResults(null);
@@ -118,7 +123,7 @@ const Search = () => {
 
   // Artist result component (memoized)
   const ArtistResult = React.memo(({ artist }) => {
-    const imageUrl = getImageUrl('profilePics', artist.profile_pic);
+    const imageUrl = getImageUrl('profilePics', artist.profile_pic) + "?h=232";
     return (
       <Link
         to={`/profile/${artist.id}`}
@@ -148,7 +153,7 @@ const Search = () => {
 
   // Album result component (memoized)
   const AlbumResult = React.memo(({ album }) => {
-    const imageUrl = getImageUrl('albumArt', album.album_art);
+    const imageUrl = getImageUrl('albumArt', album.album_art) + "?h=232";
     return (
       <Link
         to={`/album/${album.id}`}
@@ -206,29 +211,50 @@ const Search = () => {
 
       {results && !loading && (
         <div className="space-y-8">
+          {/* Songs Section */}
           {results.tracks?.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-2xl font-bold">Songs</h2>
                 {results.tracks.length > 5 && (
-                  <button className="text-gray-400 hover:text-white flex items-center gap-1">
-                    Show all <ChevronRight size={20} />
+                  <button
+                    onClick={() => setShowAllTracks(!showAllTracks)}
+                    className="text-gray-400 hover:text-white flex items-center gap-1"
+                  >
+                    {showAllTracks ? 'Show Less' : 'Show All'} <ChevronRight size={20} />
                   </button>
                 )}
               </div>
               <div className="space-y-1">
-                {results.tracks.map((track, index) => (
+                {(results.tracks.length > 5 && !showAllTracks
+                  ? results.tracks.slice(0, 5)
+                  : results.tracks
+                ).map((track, index) => (
                   <TrackResult key={track.id} track={track} index={index} />
                 ))}
               </div>
             </div>
           )}
 
+          {/* Artists Section */}
           {results.users?.length > 0 && (
             <div>
-              <h2 className="text-2xl font-bold mb-4">Artists</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold">Artists</h2>
+                {results.users.length > 5 && (
+                  <button
+                    onClick={() => setShowAllArtists(!showAllArtists)}
+                    className="text-gray-400 hover:text-white flex items-center gap-1"
+                  >
+                    {showAllArtists ? 'Show Less' : 'Show All'} <ChevronRight size={20} />
+                  </button>
+                )}
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                {results.users.map((artist) => (
+                {(results.users.length > 5 && !showAllArtists
+                  ? results.users.slice(0, 5)
+                  : results.users
+                ).map((artist) => (
                   <motion.div
                     key={artist.id}
                     initial={{ opacity: 0, scale: 0.9 }}
@@ -241,11 +267,25 @@ const Search = () => {
             </div>
           )}
 
+          {/* Albums Section */}
           {results.albums?.length > 0 && (
             <div>
-              <h2 className="text-2xl font-bold mb-4">Albums</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold">Albums</h2>
+                {results.albums.length > 5 && (
+                  <button
+                    onClick={() => setShowAllAlbums(!showAllAlbums)}
+                    className="text-gray-400 hover:text-white flex items-center gap-1"
+                  >
+                    {showAllAlbums ? 'Show Less' : 'Show All'} <ChevronRight size={20} />
+                  </button>
+                )}
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                {results.albums.map((album) => (
+                {(results.albums.length > 5 && !showAllAlbums
+                  ? results.albums.slice(0, 5)
+                  : results.albums
+                ).map((album) => (
                   <motion.div
                     key={album.id}
                     initial={{ opacity: 0, scale: 0.9 }}
@@ -258,9 +298,9 @@ const Search = () => {
             </div>
           )}
 
-          {!results.tracks?.length &&
+          {(!results.tracks?.length &&
             !results.albums?.length &&
-            !results.users?.length && (
+            !results.users?.length) && (
               <div className="text-center py-12">
                 <p className="text-gray-400">No results found for "{query}"</p>
               </div>

@@ -12,43 +12,362 @@ import MusicAPI from '../services/api';
 // Frequencies for each EQ band:
 const frequencies = [60, 230, 910, 3600, 14000];
 
+// Native IndexedDB setup for caching
+const initializeDB = () => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('music-cache-db', 1);
+    
+    request.onerror = (event) => {
+      console.error('IndexedDB error:', event.target.error);
+      reject(event.target.error);
+    };
+    
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      
+      // Store for track metadata
+      if (!db.objectStoreNames.contains('tracks')) {
+        db.createObjectStore('tracks', { keyPath: 'id' });
+      }
+      
+      // Store for audio blobs
+      if (!db.objectStoreNames.contains('audio-files')) {
+        db.createObjectStore('audio-files', { keyPath: 'id' });
+      }
+      
+      // Store for album art
+      if (!db.objectStoreNames.contains('album-art')) {
+        db.createObjectStore('album-art', { keyPath: 'url' });
+      }
+    };
+    
+    request.onsuccess = (event) => {
+      resolve(event.target.result);
+    };
+  });
+};
+
+// Cache manager for abstracting cache operations
+const CacheManager = {
+  db: null,
+  
+  // Initialize the database
+  async init() {
+    if (!this.db) {
+      try {
+        this.db = await initializeDB();
+      } catch (err) {
+        console.error('Failed to initialize IndexedDB', err);
+        return null;
+      }
+    }
+    return this.db;
+  },
+  
+  // Helper for database operations
+  async transaction(storeName, mode, callback) {
+    const db = await this.init();
+    if (!db) return null;
+    
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(storeName, mode);
+      const store = transaction.objectStore(storeName);
+      
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = (event) => reject(event.target.error);
+      
+      callback(store, resolve, reject);
+    });
+  },
+  
+  // Get track metadata from cache
+  async getTrackMetadata(trackId) {
+    try {
+      let result = null;
+      await this.transaction('tracks', 'readonly', (store, resolve) => {
+        const request = store.get(trackId);
+        request.onsuccess = () => {
+          result = request.result;
+          resolve();
+        };
+      });
+      return result;
+    } catch (error) {
+      console.error('Error getting track from cache:', error);
+      return null;
+    }
+  },
+  
+  // Save track metadata to cache
+  async saveTrackMetadata(track) {
+    try {
+      // Add timestamp for cache freshness checks
+      const trackWithTimestamp = {
+        ...track,
+        cachedAt: Date.now()
+      };
+      
+      await this.transaction('tracks', 'readwrite', (store) => {
+        store.put(trackWithTimestamp);
+      });
+    } catch (error) {
+      console.error('Error saving track to cache:', error);
+    }
+  },
+  
+  // Get audio file from cache
+  async getAudioFile(trackId) {
+    try {
+      let result = null;
+      await this.transaction('audio-files', 'readonly', (store, resolve) => {
+        const request = store.get(trackId);
+        request.onsuccess = () => {
+          result = request.result;
+          resolve();
+        };
+      });
+      return result;
+    } catch (error) {
+      console.error('Error getting audio file from cache:', error);
+      return null;
+    }
+  },
+  
+  // Save audio file to cache
+  async saveAudioFile(trackId, blob) {
+    try {
+      await this.transaction('audio-files', 'readwrite', (store) => {
+        store.put({
+          id: trackId,
+          blob,
+          cachedAt: Date.now()
+        });
+      });
+    } catch (error) {
+      console.error('Error saving audio file to cache:', error);
+    }
+  },
+  
+  // Get album art from cache
+  async getAlbumArt(url) {
+    try {
+      let result = null;
+      await this.transaction('album-art', 'readonly', (store, resolve) => {
+        const request = store.get(url);
+        request.onsuccess = () => {
+          result = request.result;
+          resolve();
+        };
+      });
+      return result;
+    } catch (error) {
+      console.error('Error getting album art from cache:', error);
+      return null;
+    }
+  },
+  
+  // Save album art to cache
+  async saveAlbumArt(url, blob) {
+    try {
+      await this.transaction('album-art', 'readwrite', (store) => {
+        store.put({
+          url,
+          blob,
+          cachedAt: Date.now()
+        });
+      });
+    } catch (error) {
+      console.error('Error saving album art to cache:', error);
+    }
+  },
+  
+  // Check if cache is stale
+  isCacheStale(cachedAt, maxAge = 24 * 60 * 60 * 1000) { // Default 24 hours
+    return !cachedAt || (Date.now() - cachedAt > maxAge);
+  },
+  
+  // Get all items from a store
+  async getAllItems(storeName) {
+    try {
+      let items = [];
+      await this.transaction(storeName, 'readonly', (store, resolve) => {
+        const request = store.getAll();
+        request.onsuccess = () => {
+          items = request.result;
+          resolve();
+        };
+      });
+      return items;
+    } catch (error) {
+      console.error(`Error getting all items from ${storeName}:`, error);
+      return [];
+    }
+  },
+  
+  // Delete item from store
+  async deleteItem(storeName, key) {
+    try {
+      await this.transaction(storeName, 'readwrite', (store) => {
+        store.delete(key);
+      });
+    } catch (error) {
+      console.error(`Error deleting item from ${storeName}:`, error);
+    }
+  },
+  
+  // Clear a store
+  async clearStore(storeName) {
+    try {
+      await this.transaction(storeName, 'readwrite', (store) => {
+        store.clear();
+      });
+    } catch (error) {
+      console.error(`Error clearing store ${storeName}:`, error);
+    }
+  },
+  
+  // Clean up old cache entries
+  async cleanupCache(maxAge = 7 * 24 * 60 * 60 * 1000) { // Default 7 days
+    try {
+      const db = await this.init();
+      if (!db) return;
+      
+      const now = Date.now();
+      const cutoff = now - maxAge;
+      
+      // Clean up tracks
+      const tracks = await this.getAllItems('tracks');
+      for (const track of tracks) {
+        if (track.cachedAt && track.cachedAt < cutoff) {
+          await this.deleteItem('tracks', track.id);
+        }
+      }
+      
+      // Clean up audio files
+      const audioFiles = await this.getAllItems('audio-files');
+      for (const file of audioFiles) {
+        if (file.cachedAt && file.cachedAt < cutoff) {
+          await this.deleteItem('audio-files', file.id);
+        }
+      }
+      
+      // Clean up album art
+      const albumArt = await this.getAllItems('album-art');
+      for (const art of albumArt) {
+        if (art.cachedAt && art.cachedAt < cutoff) {
+          await this.deleteItem('album-art', art.url);
+        }
+      }
+    } catch (error) {
+      console.error('Error cleaning up cache:', error);
+    }
+  }
+};
+
+// Function to cache a track in the background
+const cacheTrackInBackground = async (track, networkStatus) => {
+  if (!networkStatus || !track || !track.id) return;
+
+  try {
+    // First cache track metadata if needed
+    const cachedTrack = await CacheManager.getTrackMetadata(track.id);
+    if (!cachedTrack || CacheManager.isCacheStale(cachedTrack.cachedAt)) {
+      // If track info is incomplete, fetch complete data
+      if (!track.duration || !track.album_art) {
+        try {
+          const response = await MusicAPI.getTrack(track.id);
+          const fullTrackInfo = response.data;
+          await CacheManager.saveTrackMetadata(fullTrackInfo);
+          // Update the local reference to use for audio caching
+          track = fullTrackInfo;
+        } catch (err) {
+          console.log(`Couldn't fetch complete track info for ${track.id}`, err);
+          // Still cache what we have if fetch failed
+          await CacheManager.saveTrackMetadata(track);
+        }
+      } else {
+        // Cache the track metadata as is
+        await CacheManager.saveTrackMetadata(track);
+      }
+    }
+    
+    // Then check and cache the audio file if needed
+    const cachedAudio = await CacheManager.getAudioFile(track.id);
+    if (!cachedAudio) {
+      // Pre-load the audio in the background
+      console.log(`Pre-caching audio for queued track: ${track.id}`);
+      const streamInfo = MusicAPI.streamTrack(track.id);
+      fetch(streamInfo.url, { headers: streamInfo.headers })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response.blob();
+        })
+        .then(blob => {
+          CacheManager.saveAudioFile(track.id, blob);
+          console.log(`Successfully cached audio for track: ${track.id}`);
+        })
+        .catch(err => {
+          console.log(`Failed to cache audio for track: ${track.id}`, err);
+        });
+    }
+    
+    // Finally, cache album art if available
+    if (track.album_art) {
+      const cachedArt = await CacheManager.getAlbumArt(track.album_art);
+      if (!cachedArt) {
+        fetch(track.album_art)
+          .then(response => {
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.blob();
+          })
+          .then(blob => {
+            CacheManager.saveAlbumArt(track.album_art, blob);
+          })
+          .catch(err => {
+            console.log(`Failed to cache album art for track: ${track.id}`, err);
+          });
+      }
+    }
+  } catch (error) {
+    console.log(`Error pre-caching track ${track.id}:`, error);
+  }
+};
+
 const AudioContextData = createContext(null);
 
 export const AudioProvider = ({ children }) => {
   // ---------------------------
   //   1. WEB AUDIO + EQ SETUP
   // ---------------------------
-  // Create the Web Audio context (only once)
   const [audioCtx] = useState(() => new window.AudioContext());
-
-  // HTMLAudioElement reference
   const audioRef = useRef(new Audio());
+  // Preload metadata and set crossOrigin to help with duration detection
+  audioRef.current.preload = 'auto';
+  audioRef.current.crossOrigin = 'anonymous';
 
-  // EQ BiquadFilters for each frequency band
+  // EQ filters
   const eqFiltersRef = useRef(null);
   const [eqGains, setEqGains] = useState(frequencies.map(() => 0));
 
-  // Create the filters on first render
   if (!eqFiltersRef.current) {
     eqFiltersRef.current = frequencies.map((freq) => {
       const filter = audioCtx.createBiquadFilter();
       filter.type = 'peaking';
       filter.frequency.value = freq;
-      filter.Q.value = 1.0; // Adjust as desired
-      filter.gain.value = 0; // Default gain
+      filter.Q.value = 1.0;
+      filter.gain.value = 0;
       return filter;
     });
   }
 
-  // We'll store the MediaElementAudioSourceNode in here:
   const sourceRef = useRef(null);
 
-  // Connect the audio element -> filters -> audioCtx.destination
   useEffect(() => {
     const audio = audioRef.current;
-    audio.crossOrigin = 'anonymous';
-
-    // If we already created a source before, disconnect it:
     if (sourceRef.current) {
       try {
         sourceRef.current.disconnect();
@@ -56,35 +375,25 @@ export const AudioProvider = ({ children }) => {
         console.error('Error disconnecting old source:', err);
       }
     }
-
-    // Create a new MediaElement source from our <audio> ref
     sourceRef.current = audioCtx.createMediaElementSource(audio);
-
-    // Chain the EQ filters:
-    // eqFilters[0] -> eqFilters[1] -> ... -> eqFilters[n-1] -> audioCtx.destination
     const eqFilters = eqFiltersRef.current;
     for (let i = 0; i < eqFilters.length - 1; i++) {
       eqFilters[i].connect(eqFilters[i + 1]);
     }
     eqFilters[eqFilters.length - 1].connect(audioCtx.destination);
-
-    // Finally, connect the source to the first filter
     sourceRef.current.connect(eqFilters[0]);
-
-    // Initialize filters with current eqGains
+    // Initialize each filter with its gain value
     eqGains.forEach((gainValue, i) => {
       eqFilters[i].gain.value = gainValue;
     });
   }, []); // Only once on mount
 
-  // Whenever eqGains changes, update each filter's gain
   useEffect(() => {
     eqGains.forEach((gainValue, i) => {
       eqFiltersRef.current[i].gain.value = gainValue;
     });
   }, [eqGains]);
 
-  // Provide a helper to set the gain of a specific band
   const setEqGain = useCallback((index, value) => {
     setEqGains((prev) => {
       const newGains = [...prev];
@@ -92,6 +401,50 @@ export const AudioProvider = ({ children }) => {
       return newGains;
     });
   }, []);
+
+  // ---------------------------
+  //   1.1. CACHE MANAGEMENT
+  // ---------------------------
+  const [networkStatus, setNetworkStatus] = useState(navigator.onLine);
+  
+  // Monitor network status changes
+  useEffect(() => {
+    const handleOnline = () => setNetworkStatus(true);
+    const handleOffline = () => setNetworkStatus(false);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    // Initialize DB and run cache cleanup on mount
+    CacheManager.init().then(() => {
+      CacheManager.cleanupCache();
+    });
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Pre-fetch related tracks to cache when network is available
+  const prefetchRelatedTracks = useCallback(async (currentTrackId) => {
+    if (!networkStatus || !currentTrackId) return;
+    
+    try {
+      // Get recommendations or next tracks in album/playlist
+      const response = await MusicAPI.getRelatedTracks(currentTrackId);
+      const relatedTracks = response.data.tracks;
+      
+      if (relatedTracks && relatedTracks.length) {
+        // Pre-fetch in background (limited to first 3 to conserve resources)
+        relatedTracks.slice(0, 3).forEach(track => {
+          cacheTrackInBackground(track, networkStatus);
+        });
+      }
+    } catch (err) {
+      console.log('Error fetching related tracks for prefetching', err);
+    }
+  }, [networkStatus]);
 
   // ---------------------------
   //    2. PLAYER STATE
@@ -104,19 +457,50 @@ export const AudioProvider = ({ children }) => {
     () => parseFloat(localStorage.getItem('volume')) || 1
   );
 
-  // Queue
   const [queue, setQueue] = useState([]);
   const [queueIndex, setQueueIndex] = useState(0);
   const [queueHistory, setQueueHistory] = useState([]);
 
-  // Playback settings
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState('none'); // 'none', 'all', 'one'
 
-  // Loading & error states
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [buffering, setBuffering] = useState(false);
+  const [offlineMode, setOfflineMode] = useState(false);
+
+  // Sync player state with cache
+  useEffect(() => {
+    // Save current queue to local storage for persistence
+    localStorage.setItem('last-queue', JSON.stringify(queue));
+    localStorage.setItem('last-queue-index', queueIndex.toString());
+    localStorage.setItem('shuffle', shuffle.toString());
+    localStorage.setItem('repeat', repeat);
+  }, [queue, queueIndex, shuffle, repeat]);
+
+  // Restore last session on app startup
+  useEffect(() => {
+    try {
+      const savedQueue = JSON.parse(localStorage.getItem('last-queue'));
+      const savedIndex = parseInt(localStorage.getItem('last-queue-index'), 10);
+      const savedShuffle = localStorage.getItem('shuffle') === 'true';
+      const savedRepeat = localStorage.getItem('repeat') || 'none';
+      
+      if (savedQueue && Array.isArray(savedQueue) && savedQueue.length > 0) {
+        setQueue(savedQueue);
+        setQueueIndex(isNaN(savedIndex) ? 0 : savedIndex);
+        setShuffle(savedShuffle);
+        setRepeat(savedRepeat);
+        
+        // Don't automatically play, but set the current track
+        if (savedQueue[savedIndex]) {
+          setCurrentTrack(savedQueue[savedIndex]);
+        }
+      }
+    } catch (err) {
+      console.error('Error restoring player session', err);
+    }
+  }, []);
 
   // ---------------------------
   //   3. BASIC CONTROLS
@@ -127,7 +511,6 @@ export const AudioProvider = ({ children }) => {
       if (isPlaying) {
         audioRef.current.pause();
       } else {
-        // Because of browser policies, we must resume() the AudioContext first
         if (audioCtx.state === 'suspended') {
           await audioCtx.resume();
         }
@@ -155,7 +538,6 @@ export const AudioProvider = ({ children }) => {
     localStorage.setItem('volume', value.toString());
   }, []);
 
-  // Shuffle & Repeat
   const toggleShuffle = useCallback(() => {
     setShuffle((prev) => !prev);
   }, []);
@@ -175,6 +557,11 @@ export const AudioProvider = ({ children }) => {
     });
   }, []);
 
+  // Toggle offline mode manually
+  const toggleOfflineMode = useCallback(() => {
+    setOfflineMode(prev => !prev);
+  }, []);
+
   // ---------------------------
   //   4. QUEUE MANAGEMENT
   // ---------------------------
@@ -184,10 +571,19 @@ export const AudioProvider = ({ children }) => {
     setQueueHistory([]);
   }, []);
 
-  const addToQueue = useCallback((tracks) => {
+  // Modified addToQueue with caching for tracks that aren't added via play button
+  const addToQueue = useCallback((tracks, fromPlayButton = false) => {
     const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
     setQueue((prev) => [...prev, ...tracksArray]);
-  }, []);
+    
+    // Only pre-cache if not from play button and network is available
+    if (!fromPlayButton && networkStatus) {
+      // For each track, start the caching process in the background
+      tracksArray.forEach(track => {
+        cacheTrackInBackground(track, networkStatus);
+      });
+    }
+  }, [networkStatus]);
 
   const removeFromQueue = useCallback(
     (index) => {
@@ -200,7 +596,7 @@ export const AudioProvider = ({ children }) => {
   );
 
   // ---------------------------
-  //   5. PLAY/LOAD TRACKS
+  //   5. PLAY/LOAD TRACKS WITH CACHING
   // ---------------------------
   const playTrack = useCallback(
     async (track, addToQueueFlag = true) => {
@@ -215,18 +611,7 @@ export const AudioProvider = ({ children }) => {
           return;
         }
 
-        // Fetch updated track info
-        try {
-          const response = await MusicAPI.getTrack(trackInfo.id);
-          trackInfo = response.data;
-        } catch (err) {
-          console.error('Error fetching track:', err);
-          setError('Track not found or inaccessible');
-          setLoading(false);
-          return;
-        }
-
-        // If it's the same track, just toggle play/pause
+        // If it's the same track, toggle play/pause
         if (currentTrack?.id === trackInfo.id) {
           togglePlay();
           setLoading(false);
@@ -234,87 +619,161 @@ export const AudioProvider = ({ children }) => {
         }
 
         const token = localStorage.getItem('token');
-        if (!token) {
+        if (!token && !offlineMode) {
           throw new Error('Authentication required');
         }
 
-        // Begin loading
-        const audio = audioRef.current;
+        // Try to get updated track metadata (from cache first, then network)
         try {
-          const streamInfo = MusicAPI.streamTrack(trackInfo.id);
-          const response = await fetch(streamInfo.url, {
-            headers: streamInfo.headers,
-          });
-
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-
-          const blob = await response.blob();
-          const blobUrl = URL.createObjectURL(blob);
-
-          // Promise that resolves when the audio has loaded enough to play
-          const loadPromise = new Promise((resolve, reject) => {
-            const onLoaded = () => {
-              audio.removeEventListener('loadeddata', onLoaded);
-              audio.removeEventListener('error', onError);
-              resolve();
-            };
-            const onError = (e) => {
-              audio.removeEventListener('loadeddata', onLoaded);
-              audio.removeEventListener('error', onError);
-              URL.revokeObjectURL(audio.src);
-              reject(
-                new Error(e.target.error?.message || 'Failed to load audio')
-              );
-            };
-            audio.addEventListener('loadeddata', onLoaded);
-            audio.addEventListener('error', onError);
-          });
-
-          // If old src was a blob, revoke it
-          if (audio.src && audio.src.startsWith('blob:')) {
-            URL.revokeObjectURL(audio.src);
-          }
-
-          // Assign new blob
-          audio.src = blobUrl;
-          audio.load();
-
-          await loadPromise;
-
-          // Manage queue
-          if (addToQueueFlag) {
-            if (currentTrack) {
-              setQueueHistory((prev) => [...prev, currentTrack]);
+          // Check if we have the track in cache first
+          const cachedTrackInfo = await CacheManager.getTrackMetadata(trackInfo.id);
+          
+          // Use cached track if available and not online, or if cache is fresh
+          const useCache = cachedTrackInfo && 
+            (!networkStatus || !CacheManager.isCacheStale(cachedTrackInfo.cachedAt));
+          
+          if (useCache) {
+            // Use the cached metadata
+            trackInfo = cachedTrackInfo;
+            console.log('Using cached metadata for track', trackInfo.id);
+          } else if (networkStatus) {
+            // Fetch from network if available
+            try {
+              const response = await MusicAPI.getTrack(trackInfo.id);
+              trackInfo = response.data;
+              
+              // Update the cache with fresh metadata
+              await CacheManager.saveTrackMetadata(trackInfo);
+            } catch (err) {
+              console.error('Network error fetching track', err);
+              // Fall back to cache if network fails
+              if (cachedTrackInfo) {
+                trackInfo = cachedTrackInfo;
+                console.log('Falling back to cached metadata after network error');
+              } else {
+                throw err; // Re-throw if no cache available
+              }
             }
-            setQueue((prev) => [...prev, trackInfo]);
-            setQueueIndex(queue.length);
+          } else if (!cachedTrackInfo) {
+            throw new Error('Track not available offline');
           }
+        } catch (err) {
+          console.error('Error fetching track metadata:', err);
+          if (!networkStatus) {
+            setError('Track not available offline');
+          } else {
+            setError('Track not found or inaccessible');
+          }
+          setLoading(false);
+          return;
+        }
 
-          setCurrentTrack(trackInfo);
-
-          // Attempt to play
+        const audio = audioRef.current;
+        
+        // Try to get audio from cache first
+        const cachedAudio = await CacheManager.getAudioFile(trackInfo.id);
+        let blobUrl;
+        
+        if (cachedAudio && cachedAudio.blob) {
+          console.log('Using cached audio file for track', trackInfo.id);
+          blobUrl = URL.createObjectURL(cachedAudio.blob);
+        } else if (networkStatus) {
+          // Fetch from network if not in cache and online
           try {
-            if (audioCtx.state === 'suspended') {
-              // Resume context on user gesture
-              await audioCtx.resume();
+            const streamInfo = MusicAPI.streamTrack(trackInfo.id);
+            const response = await fetch(streamInfo.url, {
+              headers: streamInfo.headers,
+            });
+
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
             }
-            await audio.play();
-            setIsPlaying(true);
-            setLoading(false);
-            // Optionally update server play count
-            MusicAPI.updatePlayCount?.(trackInfo.id).catch(console.error);
-          } catch (playError) {
-            console.error('Play error:', playError);
-            setError('Failed to start playback. Please try again.');
-            setLoading(false);
+
+            const blob = await response.blob();
+            blobUrl = URL.createObjectURL(blob);
+            
+            // Save to cache for future offline use
+            await CacheManager.saveAudioFile(trackInfo.id, blob);
+          } catch (err) {
+            console.error('Network error fetching audio', err);
+            throw new Error('Failed to load audio file');
           }
-        } catch (loadError) {
-          console.error('Load error:', loadError);
-          setError(
-            'Failed to load audio. Please check your connection and try again.'
-          );
+        } else {
+          // Offline and no cache available
+          throw new Error('Audio file not available offline');
+        }
+
+        // Use a promise that resolves when metadata is loaded
+        const loadPromise = new Promise((resolve, reject) => {
+          const onLoadedMetadata = () => {
+            audio.removeEventListener('loadedmetadata', onLoadedMetadata);
+            audio.removeEventListener('error', onError);
+            resolve();
+          };
+          const onError = (e) => {
+            audio.removeEventListener('loadedmetadata', onLoadedMetadata);
+            audio.removeEventListener('error', onError);
+            URL.revokeObjectURL(audio.src);
+            reject(
+              new Error(e.target.error?.message || 'Failed to load audio')
+            );
+          };
+          audio.addEventListener('loadedmetadata', onLoadedMetadata);
+          audio.addEventListener('error', onError);
+        });
+
+        // Clean up old blob URL if exists
+        if (audio.src && audio.src.startsWith('blob:')) {
+          URL.revokeObjectURL(audio.src);
+        }
+
+        audio.src = blobUrl;
+        audio.load();
+
+        await loadPromise;
+
+        // Multiple verification for duration:
+        // Compare audio.duration with trackInfo.duration (if available)
+        let reportedDuration = audio.duration;
+        if (
+          trackInfo.duration &&
+          (reportedDuration === Infinity ||
+          Math.abs(reportedDuration - trackInfo.duration) > 5)
+        ) {
+          setDuration(trackInfo.duration);
+        } else {
+          setDuration(reportedDuration);
+        }
+
+        if (addToQueueFlag) {
+          if (currentTrack) {
+            setQueueHistory((prev) => [...prev, currentTrack]);
+          }
+          // Add to queue with fromPlayButton flag set to true
+          addToQueue([trackInfo], true);
+          setQueueIndex(queue.length);
+        }
+
+        setCurrentTrack(trackInfo);
+
+        try {
+          if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+          }
+          await audio.play();
+          setIsPlaying(true);
+          setLoading(false);
+          
+          // Start prefetching related tracks
+          prefetchRelatedTracks(trackInfo.id);
+          
+          // Update play count if online
+          if (networkStatus) {
+            MusicAPI.updatePlayCount?.(trackInfo.id).catch(console.error);
+          }
+        } catch (playError) {
+          console.error('Play error:', playError);
+          setError('Failed to start playback. Please try again.');
           setLoading(false);
         }
       } catch (err) {
@@ -323,10 +782,9 @@ export const AudioProvider = ({ children }) => {
         setLoading(false);
       }
     },
-    [currentTrack, queue.length, togglePlay, audioCtx]
+    [currentTrack, queue.length, togglePlay, audioCtx, offlineMode, networkStatus, prefetchRelatedTracks, addToQueue]
   );
 
-  // Cleanup blob URLs on unmount
   useEffect(() => {
     return () => {
       const audio = audioRef.current;
@@ -344,11 +802,12 @@ export const AudioProvider = ({ children }) => {
       if (queue.length === 0) return;
       let nextIndex;
       if (shuffle) {
-        // random track that's not the current index
-        const availableIndices = [...queue.keys()].filter((i) => i !== queueIndex);
+        const availableIndices = [...queue.keys()].filter(
+          (i) => i !== queueIndex
+        );
         if (availableIndices.length === 0) return;
         nextIndex =
-          availableIndices[Math.floor(Math.random() * availableIndices.length)];
+        availableIndices[Math.floor(Math.random() * availableIndices.length)];
       } else {
         nextIndex = (queueIndex + 1) % queue.length;
       }
@@ -360,20 +819,16 @@ export const AudioProvider = ({ children }) => {
 
   const playPrevious = useCallback(() => {
     if (queue.length === 0) return;
-
-    // If track played more than 3 seconds, just restart
     if (currentTime > 3) {
       audioRef.current.currentTime = 0;
       return;
     }
-    // If there's a history, use that
     if (queueHistory.length > 0) {
       const previousTrack = queueHistory[queueHistory.length - 1];
       setQueueHistory((prev) => prev.slice(0, -1));
       playTrack(previousTrack, false);
       return;
     }
-    // Otherwise go to the previous index
     let prevIndex;
     if (shuffle) {
       prevIndex = Math.floor(Math.random() * queue.length);
@@ -407,8 +862,8 @@ export const AudioProvider = ({ children }) => {
   useEffect(() => {
     const audio = audioRef.current;
     audio.volume = volume;
+    audio.preload = 'auto';
 
-    // Event handlers
     const handleLoadStart = () => {
       setLoading(true);
       setBuffering(true);
@@ -416,6 +871,9 @@ export const AudioProvider = ({ children }) => {
     const handleLoadedData = () => {
       setLoading(false);
       setBuffering(false);
+    };
+    const handleLoadedMetadata = () => {
+      setDuration(audio.duration);
     };
     const handleTimeUpdate = () => {
       setCurrentTime(audio.currentTime);
@@ -438,6 +896,7 @@ export const AudioProvider = ({ children }) => {
 
     audio.addEventListener('loadstart', handleLoadStart);
     audio.addEventListener('loadeddata', handleLoadedData);
+    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
     audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('durationchange', handleDurationChange);
     audio.addEventListener('ended', handleTrackEnd);
@@ -448,6 +907,7 @@ export const AudioProvider = ({ children }) => {
     return () => {
       audio.removeEventListener('loadstart', handleLoadStart);
       audio.removeEventListener('loadeddata', handleLoadedData);
+      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('durationchange', handleDurationChange);
       audio.removeEventListener('ended', handleTrackEnd);
@@ -458,14 +918,69 @@ export const AudioProvider = ({ children }) => {
   }, [volume, handleTrackEnd]);
 
   // ---------------------------
-  //   9. PROVIDER OUTPUT
+  //   9. CACHE MANAGEMENT API
+  // ---------------------------
+  const clearCache = useCallback(async () => {
+    try {
+      await CacheManager.clearStore('tracks');
+      await CacheManager.clearStore('audio-files');
+      await CacheManager.clearStore('album-art');
+      console.log('Cache cleared successfully');
+      return true;
+    } catch (error) {
+      console.error('Error clearing cache:', error);
+      return false;
+    }
+  }, []);
+
+  const getCacheSize = useCallback(async () => {
+    try {
+      // Get all stored objects
+      const tracks = await CacheManager.getAllItems('tracks');
+      const audioFiles = await CacheManager.getAllItems('audio-files');
+      const albumArt = await CacheManager.getAllItems('album-art');
+      
+      // Calculate size
+      let totalSize = 0;
+      
+      // Audio files will be the largest
+      audioFiles.forEach(file => {
+        if (file.blob && file.blob.size) {
+          totalSize += file.blob.size;
+        }
+      });
+      
+      // Album art
+      albumArt.forEach(art => {
+        if (art.blob && art.blob.size) {
+          totalSize += art.blob.size;
+        }
+      });
+      
+      // Track metadata (rough estimate)
+      totalSize += JSON.stringify(tracks).length;
+      
+      // Convert to MB for readability
+      return {
+        totalMB: (totalSize / (1024 * 1024)).toFixed(2),
+        tracks: tracks.length,
+        audioFiles: audioFiles.length,
+        albumArt: albumArt.length
+      };
+    } catch (error) {
+      console.error('Error calculating cache size:', error);
+      return null;
+    }
+  }, []);
+
+  // ---------------------------
+  //   10. PROVIDER OUTPUT
   // ---------------------------
   const value = {
     // EQ
     eqGains,
     setEqGain,
-
-    // Main player state
+    // Player state
     currentTrack,
     isPlaying,
     duration,
@@ -479,23 +994,27 @@ export const AudioProvider = ({ children }) => {
     loading,
     error,
     buffering,
-
-    // Main playback methods
+    // Network status
+    networkStatus,
+    offlineMode,
+    toggleOfflineMode,
+    // Playback methods
     playTrack,
     togglePlay,
     seek,
     setVolume: setAudioVolume,
     playNext,
     playPrevious,
-
-    // Settings toggles
+    // Toggles
     toggleShuffle,
     toggleRepeat,
-
     // Queue management
     clearQueue,
     addToQueue,
     removeFromQueue,
+    // Cache management
+    clearCache,
+    getCacheSize,
   };
 
   return (
