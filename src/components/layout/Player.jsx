@@ -20,6 +20,7 @@ import {
   Plus,
   ChevronDown,
   Share2,
+  Sliders,
 } from 'lucide-react';
 import { useAudio } from '../../contexts/AudioContext';
 import { useResponsive } from './MainLayout';
@@ -128,7 +129,8 @@ const PlaybackControls = ({
   toggleRepeat,
   shuffle,
   repeat,
-  isMobile = false
+  isMobile = false,
+  onEqClick = null,
 }) => {
   const isLarge = size === 'large';
   const buttonSize = isLarge ? 28 : (isMobile ? 18 : 20);
@@ -136,7 +138,7 @@ const PlaybackControls = ({
   const containerClass = isLarge ? 'gap-6' : (isMobile ? 'gap-3' : 'gap-4');
 
   return (
-    <div className={`flex items-center ${containerClass} select-none`}>
+    <div className={`flex items-center ${containerClass} select-none player-controls`}>
       {!isMobile && (
         <motion.button
           onClick={toggleShuffle}
@@ -164,7 +166,10 @@ const PlaybackControls = ({
       </motion.button>
 
       <motion.button
-        onClick={togglePlay}
+        onClick={(e) => {
+          e.stopPropagation(); // Prevent expansion when clicking play/pause
+          togglePlay();
+        }}
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
         className={`flex items-center justify-center rounded-full ${
@@ -199,7 +204,7 @@ const PlaybackControls = ({
         <SkipForward size={buttonSize} />
       </motion.button>
 
-      {!isMobile && (
+      {!isMobile ? (
         <motion.button
           onClick={toggleRepeat}
           whileHover={{ scale: 1.1 }}
@@ -217,8 +222,258 @@ const PlaybackControls = ({
             <Repeat size={buttonSize} />
           )}
         </motion.button>
+      ) : (
+        onEqClick && (
+          <motion.button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEqClick();
+            }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            className="text-gray-400 hover:text-white transition-all duration-200"
+          >
+            <Sliders size={buttonSize} />
+          </motion.button>
+        )
       )}
     </div>
+  );
+};
+
+/* ─────────────────────────────────────────────── *
+ *         AudioVisualizer Component              *
+ * ─────────────────────────────────────────────── */
+const AudioVisualizer = ({ audioContext, analyserNode }) => {
+  const canvasRef = useRef(null);
+  const animationRef = useRef(null);
+
+  useEffect(() => {
+    if (!analyserNode || !canvasRef.current) return;
+    
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    
+    // Set canvas size to match its display size
+    const resize = () => {
+      const { width, height } = canvas.getBoundingClientRect();
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+    };
+    
+    resize();
+    window.addEventListener('resize', resize);
+    
+    // Set up analyzer
+    analyserNode.fftSize = 256;
+    const bufferLength = analyserNode.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    // Animation function
+    const draw = () => {
+      animationRef.current = requestAnimationFrame(draw);
+      
+      analyserNode.getByteFrequencyData(dataArray);
+      
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      const barWidth = (canvas.width / bufferLength) * 2.5;
+      let x = 0;
+      
+      for (let i = 0; i < bufferLength; i++) {
+        const barHeight = (dataArray[i] / 255) * canvas.height;
+        
+        // Create gradient for bars
+        const gradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
+        gradient.addColorStop(0, 'rgba(162, 77, 230, 0.8)'); // Bottom color
+        gradient.addColorStop(1, 'rgba(124, 58, 237, 0.8)'); // Top color
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+        
+        x += barWidth + 1;
+      }
+    };
+    
+    draw();
+    
+    return () => {
+      cancelAnimationFrame(animationRef.current);
+      window.removeEventListener('resize', resize);
+    };
+  }, [analyserNode]);
+  
+  return (
+    <canvas 
+      ref={canvasRef} 
+      className="w-full h-24 rounded-lg"
+    />
+  );
+};
+
+/* ─────────────────────────────────────────────── *
+ *                  EQ Popup                      *
+ * ─────────────────────────────────────────────── */
+const EQPopup = ({ showEQ, setShowEQ, isMobile = false }) => {
+  const { eqGains, setEqGain, audioContext, analyserNode } = useAudio();
+  const frequencies = [60, 230, 910, 3600, 14000]; // From AudioContext.jsx
+  const frequencyLabels = ['60Hz', '230Hz', '910Hz', '3.6kHz', '14kHz'];
+  const dragControls = useDragControls();
+  
+  // Fixed handleSliderChange to ensure proper slider interaction
+  const handleSliderChange = (index, event) => {
+    const value = parseFloat(event.target.value);
+    setEqGain(index, value);
+  };
+  
+  const resetEQ = () => {
+    frequencies.forEach((_, index) => {
+      setEqGain(index, 0);
+    });
+  };
+  
+  const presets = [
+    { name: 'Flat', values: [0, 0, 0, 0, 0] },
+    { name: 'Bass Boost', values: [6, 3, 0, 0, 0] },
+    { name: 'Treble Boost', values: [0, 0, 0, 3, 6] },
+    { name: 'Vocal Boost', values: [0, 0, 3, 4, 0] },
+    { name: 'Loudness', values: [4, 0, 0, 2, 4] },
+  ];
+  
+  const applyPreset = (preset) => {
+    preset.values.forEach((value, index) => {
+      setEqGain(index, value);
+    });
+  };
+  
+  return (
+    <AnimatePresence>
+      {showEQ && (
+        <motion.div
+          className={`fixed z-50 bg-surface/95 backdrop-blur-lg shadow-lg ${
+            isMobile 
+              ? 'inset-x-0 bottom-0 pb-10 rounded-t-lg' 
+              : 'top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 rounded-lg p-6'
+          }`}
+          initial={isMobile ? { y: '100%' } : { opacity: 0, scale: 0.9 }}
+          animate={isMobile ? { y: 0 } : { opacity: 1, scale: 1 }}
+          exit={isMobile ? { y: '100%' } : { opacity: 0, scale: 0.9 }}
+          transition={{ type: "spring", damping: 25 }}
+          drag={isMobile ? "y" : false}
+          dragControls={dragControls}
+          dragConstraints={{ top: 0, bottom: 0 }}
+          dragElastic={0.2}
+          onDragEnd={(e, info) => {
+            if (isMobile && info.offset.y > 100) {
+              setShowEQ(false);
+            }
+          }}
+        >
+          {isMobile && (
+            <div 
+              className="w-16 h-1 bg-gray-500/30 rounded-full absolute top-2 left-1/2 transform -translate-x-1/2"
+              onPointerDown={(e) => dragControls.start(e)}
+            />
+          )}
+          
+          <div className="flex justify-between items-center mb-4 px-6 pt-6">
+            <h3 className="text-lg font-bold">Equalizer</h3>
+            <motion.button
+              onClick={() => setShowEQ(false)}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              className="text-gray-400 hover:text-white"
+            >
+              <X size={20} />
+            </motion.button>
+          </div>
+          
+          <div className="flex flex-col space-y-6">
+            {/* Audio Visualizer */}
+            <div className="px-6">
+              <AudioVisualizer 
+                audioContext={audioContext} 
+                analyserNode={analyserNode}
+              />
+            </div>
+            
+            {/* EQ Sliders with proper vertical orientation */}
+            <div className="flex justify-between items-end h-48 gap-4 px-6">
+              {eqGains.map((gain, index) => (
+                <div key={index} className="flex flex-col items-center space-y-2 flex-1">
+                  <span className="text-xs text-gray-300">{gain > 0 ? `+${gain.toFixed(1)}` : gain.toFixed(1)}</span>
+                  <div className="relative h-36 w-full flex justify-center">
+                    <div className="h-full w-1 bg-gray-700 rounded-full relative">
+                      {/* Center line (0 dB) */}
+                      <div className="absolute left-0 right-0 top-1/2 h-px bg-gray-500"></div>
+                      
+                      {/* Gain indicator */}
+                      <div 
+                        className={`absolute w-full ${gain >= 0 ? 'bg-accent' : 'bg-red-500'}`}
+                        style={{ 
+                          height: `${Math.abs(gain) / 12 * 50}%`,
+                          bottom: gain >= 0 ? '50%' : `calc(50% - ${Math.abs(gain) / 12 * 50}%)` 
+                        }}
+                      ></div>
+                      
+                      {/* Touch area overlay (bigger touch target) */}
+                      <div className="absolute inset-x-0 h-full flex flex-col justify-center">
+                        <input
+                          type="range"
+                          min="-12"
+                          max="12"
+                          step="0.1"
+                          value={gain}
+                          onChange={(e) => handleSliderChange(index, e)}
+                          className="w-36 h-full origin-center -rotate-90 absolute opacity-0 cursor-pointer"
+                          style={{
+                            // Position the range input correctly for proper vertical behavior
+                            left: '-70px',
+                            top: '0',
+                            transformOrigin: 'center',
+                            // Make the slider thumb area bigger for easier interaction
+                            pointerEvents: 'auto',
+                            touchAction: 'none'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-xs text-gray-400">{frequencyLabels[index]}</span>
+                </div>
+              ))}
+            </div>
+            
+            {/* Preset Buttons */}
+            <div className="px-6">
+              <div className="flex flex-wrap gap-2 justify-center">
+                {presets.map((preset, index) => (
+                  <motion.button
+                    key={index}
+                    onClick={() => applyPreset(preset)}
+                    className="px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-full text-sm"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    {preset.name}
+                  </motion.button>
+                ))}
+                <motion.button
+                  onClick={resetEQ}
+                  className="px-3 py-1.5 bg-accent hover:bg-accent/80 text-white rounded-full text-sm"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  Reset EQ
+                </motion.button>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };
 
@@ -263,7 +518,7 @@ const LyricsPanel = ({ showLyrics, setShowLyrics, showExpanded, lyrics, currentT
   useEffect(() => {
     if (showLyrics && currentLineIndex !== -1 && panelRef.current) {
       const lyricsContainer = panelRef.current.querySelector('div.overflow-y-auto');
-      const currentLine = lyricsContainer.children[currentLineIndex];
+      const currentLine = lyricsContainer?.children[currentLineIndex];
       
       if (currentLine) {
         currentLine.scrollIntoView({
@@ -544,34 +799,21 @@ const ExpandedPlayer = ({
   showQueue,
   showLyrics,
   setShowLyrics,
+  setShowEQ,
+  showEQ,
   onClose,
   setShowPlaylistModal,
   isMobile = false
 }) => {
   const navigate = useNavigate();
   const dragControls = useDragControls();
+  const dragThreshold = useRef(50); // Threshold for drag to be considered intentional
+  const dragStartY = useRef(0); // Track initial drag position
   
-  // Track current snap position (for half-scroll behavior)
-  const [snapPosition, setSnapPosition] = useState('full'); // 'full', 'half', or 'closed'
+  // State for half-screen mode
+  const [isDragging, setIsDragging] = useState(false);
   const playerRef = useRef(null);
   const imageRef = useRef(null);
-  const [artScale, setArtScale] = useState(1);
-  
-  // Animation controls
-  const controlsAnimation = useAnimation();
-  
-  // Check localStorage to see if tutorial has been shown
-  const [tutorialShown, setTutorialShown] = useState(() => {
-    return localStorage.getItem('playerTutorialShown') === 'true';
-  });
-  
-  // Save tutorial shown state to localStorage
-  useEffect(() => {
-    if (!tutorialShown && isMobile) {
-      localStorage.setItem('playerTutorialShown', 'true');
-      setTutorialShown(true);
-    }
-  }, [tutorialShown, isMobile]);
   
   // Custom navigate function that closes expanded player
   const handleNavigate = (path) => {
@@ -579,67 +821,19 @@ const ExpandedPlayer = ({
     onClose();
   };
   
-  // For swipe gesture detection
+  // Enhanced touch handling for better discrimination between taps and drags
+  const handleDragStart = (e, info) => {
+    setIsDragging(true);
+    dragStartY.current = info.point.y;
+  };
+  
   const handleDragEnd = (e, info) => {
-    if (isMobile) {
-      // If dragging vertically (mainly for close/half-screen behavior)
-      if (Math.abs(info.offset.y) > Math.abs(info.offset.x)) {
-        if (info.offset.y > 100) {
-          // Swipe down to close if already in half mode, or go to half mode
-          if (snapPosition === 'half') {
-            onClose();
-          } else {
-            setSnapPosition('half');
-            controlsAnimation.start({
-              y: "40%",
-              transition: { type: "spring", damping: 25 }
-            });
-            setArtScale(0.7);
-          }
-        } else if (info.offset.y < -100 && snapPosition === 'half') {
-          // Swipe up to full screen from half mode
-          setSnapPosition('full');
-          controlsAnimation.start({
-            y: "0%",
-            transition: { type: "spring", damping: 25 }
-          });
-          setArtScale(1);
-        }
-      } 
-      // If dragging horizontally (for track changing)
-      else {
-        // Swipe left to play next
-        if (info.offset.x < -80 && currentTrack) {
-          playNext();
-          // Add swipe visual feedback
-          imageRef.current.animate([
-            { transform: 'translateX(0)' },
-            { transform: 'translateX(-100%)', opacity: 0 }
-          ], { duration: 300, easing: 'ease-out' });
-          
-          setTimeout(() => {
-            imageRef.current.animate([
-              { transform: 'translateX(100%)', opacity: 0 },
-              { transform: 'translateX(0)', opacity: 1 }
-            ], { duration: 300, easing: 'ease-out' });
-          }, 50);
-        }
-        // Swipe right to play previous
-        else if (info.offset.x > 80 && currentTrack) {
-          playPrevious();
-          // Add swipe visual feedback
-          imageRef.current.animate([
-            { transform: 'translateX(0)' },
-            { transform: 'translateX(100%)', opacity: 0 }
-          ], { duration: 300, easing: 'ease-out' });
-          
-          setTimeout(() => {
-            imageRef.current.animate([
-              { transform: 'translateX(-100%)', opacity: 0 },
-              { transform: 'translateX(0)', opacity: 1 }
-            ], { duration: 300, easing: 'ease-out' });
-          }, 50);
-        }
+    setIsDragging(false);
+    
+    // Only process drag if it exceeds threshold
+    if (Math.abs(info.point.y - dragStartY.current) > dragThreshold.current) {
+      if (info.offset.y > 100 && isMobile) {
+        onClose(); // Close directly on significant downward drag
       }
     }
   };
@@ -647,6 +841,9 @@ const ExpandedPlayer = ({
   // Double tap to like
   const [lastTap, setLastTap] = useState(0);
   const handleTap = (e) => {
+    // Only process taps when not actively dragging
+    if (isDragging) return;
+    
     e.stopPropagation();
     const now = Date.now();
     if (now - lastTap < 300) { // Double tap threshold
@@ -676,16 +873,45 @@ const ExpandedPlayer = ({
     setLastTap(now);
   };
 
-  // Initialize half-scroll behavior
-  useEffect(() => {
-    if (isMobile) {
-      controlsAnimation.start({
-        y: snapPosition === 'half' ? "40%" : "0%",
-        transition: { type: "spring", damping: 25 }
-      });
-      setArtScale(snapPosition === 'half' ? 0.7 : 1);
+  // For swipe detection
+  const handleSwipe = (e, info) => {
+    if (Math.abs(info.offset.x) > Math.abs(info.offset.y)) {
+      // Horizontal swipe - change tracks
+      if (info.offset.x < -80 && currentTrack) {
+        playNext();
+        // Add swipe visual feedback
+        if (imageRef.current) {
+          imageRef.current.animate([
+            { transform: 'translateX(0)' },
+            { transform: 'translateX(-100%)', opacity: 0 }
+          ], { duration: 300, easing: 'ease-out' });
+          
+          setTimeout(() => {
+            imageRef.current.animate([
+              { transform: 'translateX(100%)', opacity: 0 },
+              { transform: 'translateX(0)', opacity: 1 }
+            ], { duration: 300, easing: 'ease-out' });
+          }, 50);
+        }
+      } else if (info.offset.x > 80 && currentTrack) {
+        playPrevious();
+        // Add swipe visual feedback
+        if (imageRef.current) {
+          imageRef.current.animate([
+            { transform: 'translateX(0)' },
+            { transform: 'translateX(100%)', opacity: 0 }
+          ], { duration: 300, easing: 'ease-out' });
+          
+          setTimeout(() => {
+            imageRef.current.animate([
+              { transform: 'translateX(-100%)', opacity: 0 },
+              { transform: 'translateX(0)', opacity: 1 }
+            ], { duration: 300, easing: 'ease-out' });
+          }, 50);
+        }
+      }
     }
-  }, [snapPosition, controlsAnimation, isMobile]);
+  };
 
   // Mobile expanded player layout with enhanced gesture controls
   if (isMobile) {
@@ -701,6 +927,7 @@ const ExpandedPlayer = ({
         dragControls={dragControls}
         dragConstraints={{ top: 0, bottom: 0 }}
         dragElastic={0.2}
+        onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
         {/* Header with drag handle */}
@@ -733,26 +960,20 @@ const ExpandedPlayer = ({
           </motion.button>
         </div>
         
-        {/* Main content that half-scrolls */}
-        <motion.div
-          className="flex flex-col h-full"
-          animate={controlsAnimation}
-        >
+        {/* Main content */}
+        <div className="flex flex-col h-full">
           {/* Album Art with touch/gesture capabilities */}
-          <div className="px-8 py-4">
+          <div className="px-8 py-4 art-container">
             <motion.div
               ref={imageRef}
               className="aspect-square w-full mx-auto mb-6 relative select-none"
               initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ 
-                scale: artScale,
-                opacity: 1 
-              }}
+              animate={{ scale: 1, opacity: 1 }}
               transition={{ duration: 0.3 }}
               drag="x"
               dragConstraints={{ left: 0, right: 0 }}
               dragElastic={0.8}
-              onDragEnd={handleDragEnd}
+              onDragEnd={handleSwipe}
               onTap={handleTap}
             >
               <img
@@ -813,32 +1034,30 @@ const ExpandedPlayer = ({
                 <SkipForward size={24} />
               </motion.div>
               
-              {/* Double-tap indicator that shows only once */}
-              {!tutorialShown && (
-                <motion.div
-                  className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/30 pointer-events-none"
-                  initial={{ opacity: 1 }}
-                  animate={{ opacity: 0 }}
-                  transition={{ delay: 1.5, duration: 0.5 }}
-                >
-                  <div className="text-white text-center select-none">
-                    <motion.div
-                      className="mx-auto mb-2"
-                      animate={{ 
-                        scale: [1, 0.8, 1],
-                      }}
-                      transition={{ 
-                        duration: 1, 
-                        repeat: 2,
-                        repeatType: "loop"
-                      }}
-                    >
-                      <Heart size={32} />
-                    </motion.div>
-                    <div className="text-sm opacity-80">Double-tap to like</div>
-                  </div>
-                </motion.div>
-              )}
+              {/* Tutorial only shown first time - controlled by localStorage in Player component */}
+              <motion.div
+                className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/30 pointer-events-none"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0 }}
+                transition={{ delay: 1.5, duration: 0.5 }}
+              >
+                <div className="text-white text-center select-none">
+                  <motion.div
+                    className="mx-auto mb-2"
+                    animate={{ 
+                      scale: [1, 0.8, 1],
+                    }}
+                    transition={{ 
+                      duration: 1, 
+                      repeat: 2,
+                      repeatType: "loop"
+                    }}
+                  >
+                    <Heart size={32} />
+                  </motion.div>
+                  <div className="text-sm opacity-80">Double-tap to like</div>
+                </div>
+              </motion.div>
             </motion.div>
           </div>
           
@@ -933,6 +1152,7 @@ const ExpandedPlayer = ({
                   togglePlay={togglePlay}
                   playNext={playNext}
                   isMobile={true}
+                  onEqClick={() => setShowEQ(true)}
                 />
                 
                 <motion.button
@@ -955,28 +1175,41 @@ const ExpandedPlayer = ({
               </div>
             </div>
             
-            {/* Lyrics Button */}
-            <div className="flex justify-center mb-8">
+            {/* Action Buttons */}
+            <div className="flex justify-center gap-3 mb-8">
               <motion.button
                 onClick={() => setShowLyrics((prev) => !prev)}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                className={`px-6 py-2 rounded-full text-sm font-medium transition-colors select-none ${
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors select-none ${
                   showLyrics 
                   ? 'bg-accent text-white' 
                   : 'bg-white/10 text-white hover:bg-white/20'
                 }`}
               >
-                {showLyrics ? 'Hide Lyrics' : 'Show Lyrics'}
+                {showLyrics ? 'Hide Lyrics' : 'Lyrics'}
+              </motion.button>
+              
+              <motion.button
+                onClick={() => setShowEQ((prev) => !prev)}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors select-none ${
+                  showEQ 
+                  ? 'bg-accent text-white' 
+                  : 'bg-white/10 text-white hover:bg-white/20'
+                }`}
+              >
+                {showEQ ? 'Hide EQ' : 'Equalizer'}
               </motion.button>
             </div>
           </div>
-        </motion.div>
+        </div>
       </motion.div>
     );
   }
 
-  // Desktop expanded player layout (unchanged)
+  // Desktop expanded player layout
   return (
     <motion.div
       className="fixed inset-0 z-40 flex items-center justify-center overflow-hidden"
@@ -1123,6 +1356,15 @@ const ExpandedPlayer = ({
             >
               <FileText size={24} />
             </motion.button>
+            
+            <motion.button
+              onClick={() => setShowEQ((prev) => !prev)}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              className={`${showEQ ? 'text-accent' : 'text-gray-400 hover:text-white'}`}
+            >
+              <Sliders size={24} />
+            </motion.button>
           </div>
         </div>
       </motion.div>
@@ -1160,6 +1402,7 @@ const MiniPlayer = ({
   isMuted,
   showLyrics,
   setShowLyrics,
+  setShowEQ,
   isMobile = false,
 }) => {
   const navigate = useNavigate();
@@ -1167,85 +1410,78 @@ const MiniPlayer = ({
   // For gesture controls on mobile
   const miniPlayerRef = useRef(null);
   const swipeControls = useAnimation();
+  const touchStartTime = useRef(0);
+  const touchStartPos = useRef({ x: 0, y: 0 });
+  const touchEndPos = useRef({ x: 0, y: 0 });
+  const swipeThreshold = 30; // Minimum pixels to consider a swipe
+  const tapThreshold = 200; // Maximum time in ms to consider a tap
   
-  // Check if tutorial has been shown before (stored in localStorage)
-  const [tutorialShown, setTutorialShown] = useState(() => {
-    return localStorage.getItem('miniPlayerTutorialShown') === 'true';
-  });
-  
-  // Save tutorial shown state to localStorage
-  useEffect(() => {
-    if (!tutorialShown && isMobile) {
-      localStorage.setItem('miniPlayerTutorialShown', 'true');
-      setTutorialShown(true);
-    }
-  }, [tutorialShown, isMobile]);
-  
-  // Custom navigate function that closes expanded player
+  // Custom navigate function that doesn't close expanded player
   const handleNavigate = (path) => {
     navigate(path);
-    setShowExpanded(false);
   };
   
-  // For swipe detection and feedback
-  const handleSwipe = (e, info) => {
-    if (isMobile) {
-      if (Math.abs(info.offset.y) > Math.abs(info.offset.x)) {
-        // Vertical swipe
-        if (info.offset.y < -50) {
-          setShowExpanded(true);
-          swipeControls.start({
-            y: -20,
-            transition: { duration: 0.2 }
-          });
-        }
-      } else {
-        // Horizontal swipe
-        if (currentTrack) {
-          if (info.offset.x < -50) {
-            playNext();
-            swipeControls.start({
-              x: -50,
-              transition: { duration: 0.2 }
-            }).then(() => {
-              swipeControls.start({
-                x: 0,
-                transition: { type: "spring", stiffness: 500, damping: 25 }
-              });
-            });
-          } else if (info.offset.x > 50) {
-            playPrevious();
-            swipeControls.start({
-              x: 50,
-              transition: { duration: 0.2 }
-            }).then(() => {
-              swipeControls.start({
-                x: 0,
-                transition: { type: "spring", stiffness: 500, damping: 25 }
-              });
-            });
-          }
-        }
+  // Better touch handling to distinguish between taps and swipes
+  const handleTouchStart = (e) => {
+    touchStartTime.current = Date.now();
+    touchStartPos.current = { 
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY
+    };
+  };
+  
+  const handleTouchMove = (e) => {
+    touchEndPos.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY
+    };
+  };
+  
+  const handleTouchEnd = (e) => {
+    const touchDuration = Date.now() - touchStartTime.current;
+    const touchDistance = {
+      x: touchEndPos.current.x - touchStartPos.current.x,
+      y: touchEndPos.current.y - touchStartPos.current.y
+    };
+    
+    // If it's a short touch and minimal movement, treat as tap
+    if (touchDuration < tapThreshold && 
+        Math.abs(touchDistance.x) < swipeThreshold &&
+        Math.abs(touchDistance.y) < swipeThreshold) {
+      // Check if tap was on the play button area
+      const target = e.target;
+      if (target.closest('.play-button') || target.closest('button')) {
+        // Don't expand player when clicking on controls
+        return;
+      }
+      
+      setShowExpanded(true);
+    } 
+    // Handle vertical swipe
+    else if (Math.abs(touchDistance.y) > Math.abs(touchDistance.x) && 
+             touchDistance.y < -swipeThreshold) {
+      setShowExpanded(true);
+    }
+    // Handle horizontal swipes
+    else if (Math.abs(touchDistance.x) > swipeThreshold && currentTrack) {
+      if (touchDistance.x < -swipeThreshold) {
+        playNext();
+      } else if (touchDistance.x > swipeThreshold) {
+        playPrevious();
       }
     }
   };
   
-  // Tap handlers
-  const [touchStartY, setTouchStartY] = useState(0);
+  // Double tap to like
   const [lastTap, setLastTap] = useState(0);
   
-  const handleTouchStart = (e) => {
-    setTouchStartY(e.touches[0].clientY);
-  };
-  
-  const handleTouchEnd = (e) => {
-    const yDiff = touchStartY - e.changedTouches[0].clientY;
-    if (yDiff > 30) {
-      setShowExpanded(true);
+  const handleTap = (e) => {
+    const target = e.target;
+    // Don't process taps on control buttons
+    if (target.closest('button') || target.closest('.play-button')) {
+      return;
     }
-  };
-  
-  const handleTap = () => {
+    
     const now = Date.now();
     if (now - lastTap < 300 && currentTrack) {
       toggleLike();
@@ -1271,17 +1507,10 @@ const MiniPlayer = ({
         animate={{ y: 0 }}
         exit={{ y: 100 }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        drag="y"
-        dragConstraints={{ top: 0, bottom: 0 }}
-        dragElastic={0.2}
-        onDragEnd={(e, info) => {
-          if (info.offset.y < -50) {
-            setShowExpanded(true);
-          }
-        }}
         onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        onTap={handleTap}
+        onClick={handleTap}
       >
         {/* Swipe-up indicator */}
         <motion.div 
@@ -1302,10 +1531,6 @@ const MiniPlayer = ({
         <motion.div 
           className="flex items-center flex-1 min-w-0 mr-2"
           animate={swipeControls}
-          drag="x"
-          dragConstraints={{ left: 0, right: 0 }}
-          dragElastic={0.8}
-          onDragEnd={handleSwipe}
         >
           {currentTrack ? (
             <>
@@ -1317,122 +1542,114 @@ const MiniPlayer = ({
                   className="h-10 w-10 rounded object-cover select-none"
                   onError={(e) => {
                     e.target.onerror = null;
-                    e.target.src = '/default-album-art.png';
-                  }}
-                  draggable="false"
-                />
-                {loading && (
-                  <>
-                    <motion.div 
-                      className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent rounded"
-                      initial={{ x: "-100%" }}
-                      animate={{ x: "100%" }}
-                      transition={{ 
-                        repeat: Infinity, 
-                        duration: 1.5,
-                        ease: "linear"
-                      }}
-                    />
+                  e.target.src = '/default-album-art.png';
+                }}
+                draggable="false"
+              />
+              {loading && (
+                <>
+                  <motion.div 
+                    className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent rounded"
+                    initial={{ x: "-100%" }}
+                    animate={{ x: "100%" }}
+                    transition={{ 
+                      repeat: Infinity, 
+                      duration: 1.5,
+                      ease: "linear"
+                    }}
+                  />
+                  <motion.div
+                    className="absolute inset-0 flex items-center justify-center bg-black/30 rounded"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                  >
                     <motion.div
-                      className="absolute inset-0 flex items-center justify-center bg-black/30 rounded"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                    >
-                      <motion.div
-                        className="w-6 h-6 border-2 border-accent/30 border-t-accent rounded-full"
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-                      />
-                    </motion.div>
-                  </>
-                )}
-              </motion.div>
-              
-              <div className="ml-3 min-w-0 flex-1 select-none">
-                <div 
-                  className="text-sm font-medium truncate"
-                  onClick={() => handleNavigate(`/track/${currentTrack.id}`)}
-                >
-                  {currentTrack.title}
-                </div>
-                <div 
-                  className="text-xs text-gray-400 truncate"
-                  onClick={() => handleNavigate(`/profile/${currentTrack.artistId}`)}
-                >
-                  {currentTrack.artist}
-                </div>
+                      className="w-6 h-6 border-2 border-accent/30 border-t-accent rounded-full"
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                    />
+                  </motion.div>
+                </>
+              )}
+            </motion.div>
+            
+            <div className="ml-3 min-w-0 flex-1 select-none">
+              <div 
+                className="text-sm font-medium truncate"
+                onClick={() => handleNavigate(`/track/${currentTrack.id}`)}
+              >
+                {currentTrack.title}
               </div>
-            </>
-          ) : (
-            <div className="flex items-center text-gray-400 text-sm select-none">
-              <Music2 size={18} className="mr-2" />
-              Select a track
-            </div>
-          )}
-        </motion.div>
-        
-        {/* Playback Controls */}
-        <div className="flex items-center">
-          {currentTrack && (
-            <>
-              <motion.button
-                onClick={toggleLike}
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                className={`mr-2 ${isLiked ? 'text-accent' : 'text-gray-400'}`}
+              <div 
+                className="text-xs text-gray-400 truncate"
+                onClick={() => handleNavigate(`/profile/${currentTrack.artistId}`)}
               >
-                <Heart
-                  size={18}
-                  fill={isLiked ? 'currentColor' : 'none'}
-                />
-              </motion.button>
-              
-              <motion.button
-                onClick={togglePlay}
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                className="w-8 h-8 rounded-full bg-accent text-white flex items-center justify-center"
-                disabled={loading}
-              >
-                {loading ? (
-                  <div className="border-2 border-white/30 border-t-white rounded-full animate-spin w-4 h-4" />
-                ) : isPlaying ? (
-                  <Pause size={16} />
-                ) : (
-                  <Play size={16} className="ml-0.5" />
-                )}
-              </motion.button>
-            </>
-          )}
-        </div>
-        
-        {/* Swipe indicators that appear briefly on mount - only shown once */}
-        {!tutorialShown && (
-          <motion.div
-            className="absolute inset-x-0 top-4 flex justify-center items-center pointer-events-none"
-            initial={{ opacity: 1 }}
-            animate={{ opacity: 0 }}
-            transition={{ delay: 2, duration: 0.5 }}
-          >
-            <div className="px-3 py-1 bg-black/50 rounded-full text-white text-xs select-none">
-              Swipe up for player
+                {currentTrack.artist}
+              </div>
             </div>
-          </motion.div>
+          </>
+        ) : (
+          <div className="flex items-center text-gray-400 text-sm select-none">
+            <Music2 size={18} className="mr-2" />
+            Select a track
+          </div>
         )}
       </motion.div>
-    );
-  }
+      
+      {/* Playback Controls */}
+      <div className="flex items-center play-button">
+        {currentTrack && (
+          <>
+            <motion.button
+              onClick={(e) => {
+                e.stopPropagation(); // Prevent expanding player
+                toggleLike();
+              }}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              className={`mr-2 ${isLiked ? 'text-accent' : 'text-gray-400'}`}
+            >
+              <Heart
+                size={18}
+                fill={isLiked ? 'currentColor' : 'none'}
+              />
+            </motion.button>
+            
+            <motion.button
+              onClick={(e) => {
+                e.stopPropagation(); // Prevent expanding player
+                togglePlay();
+              }}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              className="w-8 h-8 rounded-full bg-accent text-white flex items-center justify-center"
+              disabled={loading}
+            >
+              {loading ? (
+                <div className="border-2 border-white/30 border-t-white rounded-full animate-spin w-4 h-4" />
+              ) : isPlaying ? (
+                <Pause size={16} />
+              ) : (
+                <Play size={16} className="ml-0.5" />
+              )}
+            </motion.button>
+          </>
+        )}
+      </div>
+    </motion.div>
+  );
+}
 
-  // Desktop mini player (unchanged)
+  // Desktop mini player with improved alignment
   return (
     <motion.div
-      className="fixed bottom-0 left-0 right-0 h-24 bg-gradient-to-b from-surface to-background border-t border-white/5 px-4 flex items-center z-40"
+      className="fixed bottom-0 left-0 right-0 h-24 bg-gradient-to-b from-surface to-background border-t border-white/5 px-4 flex items-center justify-between z-40"
       initial={{ y: 100 }}
       animate={{ y: 0 }}
       exit={{ y: 100 }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
     >
-      {/* Track Info */}
+      {/* Track Info - Left section */}
       <div className="w-1/4 flex items-center min-w-0 group">
         {currentTrack ? (
           <>
@@ -1492,7 +1709,7 @@ const MiniPlayer = ({
         )}
       </div>
 
-      {/* Playback & Seek */}
+      {/* Playback & Seek - Center section */}
       <div className="flex-1 flex flex-col items-center max-w-2xl px-4">
         <PlaybackControls
           size="small"
@@ -1520,7 +1737,7 @@ const MiniPlayer = ({
         />
       </div>
 
-      {/* Volume, Queue & Lyrics */}
+      {/* Volume, Queue & Controls - Right section */}
       <div className="w-1/4 flex items-center justify-end gap-4">
         <motion.button
           onClick={() => setShowQueue((prev) => !prev)}
@@ -1538,6 +1755,15 @@ const MiniPlayer = ({
           className={`transition-colors ${showLyrics ? 'text-accent' : 'text-gray-400 hover:text-white'}`}
         >
           <FileText size={20} />
+        </motion.button>
+        
+        <motion.button
+          onClick={() => setShowEQ((prev) => !prev)}
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+          className="text-gray-400 hover:text-white transition-colors"
+        >
+          <Sliders size={20} />
         </motion.button>
 
         <div className="flex items-center gap-2 group">
@@ -1577,563 +1803,581 @@ const MiniPlayer = ({
 const ErrorToast = ({ error, showExpanded, isMobile = false }) => {
   return (
     <motion.div
-    className={`fixed left-1/2 transform -translate-x-1/2 bg-red-500/90 text-white px-4 py-2 rounded-full text-sm shadow-lg z-50 select-none ${
-      isMobile ? 'bottom-36' : (showExpanded ? 'bottom-8' : 'bottom-28')
-    }`}
-    initial={{ y: 50, opacity: 0 }}
-    animate={{ y: 0, opacity: 1 }}
-    exit={{ y: 50, opacity: 0 }}
-  >
-    {error}
-  </motion.div>
-);
+      className={`fixed left-1/2 transform -translate-x-1/2 bg-red-500/90 text-white px-4 py-2 rounded-full text-sm shadow-lg z-50 select-none ${
+        isMobile ? 'bottom-36' : (showExpanded ? 'bottom-8' : 'bottom-28')
+      }`}
+      initial={{ y: 50, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ y: 50, opacity: 0 }}
+    >
+      {error}
+    </motion.div>
+  );
 };
 
 /* ─────────────────────────────────────────────── *
-*                   MobileQueue                  *
-* ─────────────────────────────────────────────── */
+ *                   MobileQueue                  *
+ * ─────────────────────────────────────────────── */
 const MobileQueue = ({ queue, showQueue, setShowQueue, navigate, removeFromQueue, clearQueue }) => {
-const dragControls = useDragControls();
-
-// Custom navigate function that closes queue
-const handleNavigate = (path) => {
-  navigate(path);
-  setShowQueue(false);
-};
-
-// For swipe gestures on queue items
-const handleSwipeItem = (index, info) => {
-  if (info.offset.x < -80) {
-    // Visual feedback with animation
-    const element = document.getElementById(`queue-item-${index}`);
-    if (element) {
-      element.animate([
-        { transform: 'translateX(0)', opacity: 1 },
-        { transform: 'translateX(-100%)', opacity: 0 }
-      ], { duration: 300, easing: 'ease-out' });
-      
-      // Wait for animation to complete before removing
-      setTimeout(() => {
-        removeFromQueue(index);
-      }, 300);
-    } else {
-      removeFromQueue(index);
-    }
-  }
-};
-
-return (
-  <AnimatePresence>
-    {showQueue && (
-      <motion.div
-        initial={{ y: '100%' }}
-        animate={{ y: 0 }}
-        exit={{ y: '100%' }}
-        transition={{ type: "spring", damping: 25 }}
-        className="fixed left-0 right-0 bottom-0 top-0 bg-background z-40"
-        drag="y"
-        dragControls={dragControls}
-        dragConstraints={{ top: 0, bottom: 0 }}
-        dragElastic={0.2}
-        onDragEnd={(e, info) => {
-          if (info.offset.y > 100) {
-            setShowQueue(false);
-          }
-        }}
-      >
-        <div className="flex items-center justify-between p-4 border-b border-white/10 select-none">
-          <h2 className="text-lg font-bold">Play Queue</h2>
-          <motion.button
-            onClick={() => setShowQueue(false)}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            className="text-gray-400 hover:text-white"
-          >
-            <X size={20} />
-          </motion.button>
-        </div>
-        
-        {/* Drag handle indicator */}
-        <div 
-          className="w-16 h-1 bg-gray-500/30 rounded-full absolute left-1/2 transform -translate-x-1/2 top-2"
-          onPointerDown={(e) => dragControls.start(e)}
-        />
-
-        <div className="overflow-y-auto h-[calc(100%-128px)] p-2">
-          {queue.length > 0 ? (
-            queue.map((track, index) => (
-              <motion.div
-                id={`queue-item-${index}`}
-                key={`${track.id}-${index}`}
-                className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-light group relative"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
-                drag="x"
-                dragConstraints={{ left: 0, right: 0 }}
-                dragElastic={0.8}
-                onDragEnd={(e, info) => handleSwipeItem(index, info)}
-              >
-                <img
-                  src={
-                    track.track_image
-                      ? MusicAPI.getImage('albumArt', track.track_image)
-                      : '/default-album-art.png'
-                  }
-                  alt={track.title}
-                  className="w-12 h-12 rounded object-cover select-none"
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.src = '/default-album-art.png';
-                  }}
-                  draggable="false"
-                />
-                <div className="flex-1 min-w-0 select-none">
-                  <div
-                    className="font-medium truncate cursor-pointer hover:text-accent transition-colors"
-                    onClick={() => handleNavigate(`/track/${track.id}`)}
-                  >
-                    {track.title}
-                  </div>
-                  <div
-                    className="text-sm text-gray-400 truncate cursor-pointer hover:text-white transition-colors"
-                    onClick={() => handleNavigate(`/profile/${track.artistId}`)}
-                  >
-                    {track.artist}
-                  </div>
-                </div>
-                <motion.button
-                  onClick={() => removeFromQueue(index)}
-                  className="text-gray-400 hover:text-white"
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                >
-                  <X size={18} />
-                </motion.button>
-                
-                {/* Swipe to remove hint - appears during drag */}
-                <motion.div 
-                  className="absolute right-0 top-0 bottom-0 flex items-center justify-center bg-red-500/80 px-3 rounded-r-lg"
-                  initial={{ opacity: 0, x: "100%" }}
-                  whileDrag={{ opacity: 1, x: 0 }}
-                >
-                  <X size={20} className="text-white" />
-                </motion.div>
-              </motion.div>
-            ))
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400">
-              <ListMusic size={48} className="mb-4 opacity-50" />
-              <p className="text-sm select-none">Your queue is empty</p>
-              <p className="text-xs mt-2 select-none">Add some tracks to get started</p>
-            </div>
-          )}
-        </div>
-
-        {queue.length > 0 && (
-          <div className="absolute bottom-0 left-0 right-0 p-4 bg-surface border-t border-white/5">
-            <motion.button
-              onClick={() => {
-                clearQueue();
-                setShowQueue(false);
-              }}
-              className="w-full py-3 rounded-full bg-accent hover:bg-accent/80 transition-colors text-sm font-medium select-none"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              Clear Queue
-            </motion.button>
-          </div>
-        )}
-      </motion.div>
-    )}
-  </AnimatePresence>
-);
-};
-
-/* ─────────────────────────────────────────────── *
-*                   Main Player                  *
-* ─────────────────────────────────────────────── */
-const Player = ({ children }) => {
-// Get responsive state from context
-const { isMobile } = useResponsive();
-const location = useLocation();
-
-// Audio Context
-const {
-  currentTrack,
-  isPlaying,
-  duration,
-  currentTime,
-  volume,
-  repeat,
-  shuffle,
-  queue,
-  loading,
-  error,
-  togglePlay,
-  seek,
-  setVolume,
-  playNext,
-  playPrevious,
-  toggleShuffle,
-  toggleRepeat,
-  removeFromQueue,
-  clearQueue,
-} = useAudio();
-
-// Local State
-const [isMuted, setIsMuted] = useState(false);
-const [isLiked, setIsLiked] = useState(false);
-const [showQueue, setShowQueue] = useState(false);
-const [showExpanded, setShowExpanded] = useState(false);
-const [showLyrics, setShowLyrics] = useState(false);
-const [showPlaylistModal, setShowPlaylistModal] = useState(false);
-const [prevVolume, setPrevVolume] = useState(volume);
-const [prevPath, setPrevPath] = useState(location.pathname);
-const navigate = useNavigate();
-
-// Close expanded player when navigating to a different route
-useEffect(() => {
-  if (location.pathname !== prevPath) {
-    setShowExpanded(false);
+  const dragControls = useDragControls();
+  
+  // Custom navigate function that closes queue
+  const handleNavigate = (path) => {
+    navigate(path);
     setShowQueue(false);
-    setShowLyrics(false);
-    setPrevPath(location.pathname);
-  }
-}, [location.pathname, prevPath]);
-
-// Add a class to prevent text selection throughout the app when using gesture controls
-useEffect(() => {
-  if (isMobile) {
-    document.body.classList.add('select-none');
-    
-    // Prevent default touchmove to avoid unwanted scrolling behaviors
-    const preventDefaultScroll = (e) => {
-      if (e.target.closest('.player-controls') || 
-          e.target.closest('.art-container') ||
-          showExpanded || showQueue || showLyrics) {
-        e.preventDefault();
+  };
+  
+  // For swipe gestures on queue items
+  const handleSwipeItem = (index, info) => {
+    if (info.offset.x < -80) {
+      // Visual feedback with animation
+      const element = document.getElementById(`queue-item-${index}`);
+      if (element) {
+        element.animate([
+          { transform: 'translateX(0)', opacity: 1 },
+          { transform: 'translateX(-100%)', opacity: 0 }
+        ], { duration: 300, easing: 'ease-out' });
+        
+        // Wait for animation to complete before removing
+        setTimeout(() => {
+          removeFromQueue(index);
+        }, 300);
+      } else {
+        removeFromQueue(index);
       }
-    };
-    
-    document.addEventListener('touchmove', preventDefaultScroll, { passive: false });
-    
-    return () => {
-      document.body.classList.remove('select-none');
-      document.removeEventListener('touchmove', preventDefaultScroll);
-    };
-  }
-}, [isMobile, showExpanded, showQueue, showLyrics]);
-
-// For detecting background taps on mobile to close expanded views
-const handleBackgroundTap = (e) => {
-  if (isMobile && e.target === e.currentTarget) {
-    if (showLyrics) setShowLyrics(false);
-    else if (showQueue) setShowQueue(false);
-    else if (showExpanded) setShowExpanded(false);
-  }
-};
-
-const formatTime = useCallback((time) => {
-  if (!time || isNaN(time)) return '0:00';
-  const minutes = Math.floor(time / 60);
-  const seconds = Math.floor(time % 60);
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}, []);
-
-// Update local recents when track is playing
-useEffect(() => {
-  if (currentTrack && isPlaying) {
-    LocalRecentsAPI.addRecent(currentTrack).catch((err) =>
-      console.error('Error adding to recents:', err)
-    );
-  }
-}, [currentTrack, isPlaying]);
-
-// Check if current track is liked
-useEffect(() => {
-  const checkIfLiked = async () => {
-    if (!currentTrack) return;
-    try {
-      const response = await MusicAPI.getFavoriteTracks();
-      setIsLiked(response.data.tracks.some((t) => t.id === currentTrack.id));
-    } catch (err) {
-      console.error('Error checking favorite status:', err);
     }
   };
-  checkIfLiked();
-}, [currentTrack]);
-
-const toggleLike = async () => {
-  if (!currentTrack) return;
-  try {
-    // Optimistic UI update
-    setIsLiked(!isLiked);
-    
-    if (isLiked) {
-      await MusicAPI.unfavoriteTrack(currentTrack.id);
-    } else {
-      await MusicAPI.favoriteTrack(currentTrack.id);
-    }
-  } catch (err) {
-    // Revert on error
-    setIsLiked(isLiked);
-    console.error('Error toggling like:', err);
-  }
-};
-
-const handleVolumeChange = useCallback(
-  (e) => {
-    const newVolume = parseFloat(e.target.value);
-    setVolume(newVolume);
-    setIsMuted(newVolume === 0);
-    if (newVolume > 0) {
-      setPrevVolume(newVolume);
-    }
-  },
-  [setVolume]
-);
-
-const toggleMute = useCallback(() => {
-  if (isMuted) {
-    setVolume(prevVolume);
-    setIsMuted(false);
-  } else {
-    setPrevVolume(volume);
-    setVolume(0);
-    setIsMuted(true);
-  }
-}, [isMuted, volume, prevVolume, setVolume]);
-
-const getTrackImage = useCallback(() => {
-  if (!currentTrack) return '/default-album-art.png';
-  const imagePath = currentTrack.track_image || currentTrack.album_art;
-  if (!imagePath) return '/default-album-art.png';
-  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
-    return imagePath;
-  }
-  return MusicAPI.getImage('albumArt', imagePath);
-}, [currentTrack]);
-
-return (
-  <>
-    {/* Expanded Player */}
+  
+  return (
     <AnimatePresence>
-      {showExpanded && (
-        <ExpandedPlayer
-          currentTrack={currentTrack}
-          getTrackImage={getTrackImage}
-          formatTime={formatTime}
-          currentTime={currentTime}
-          duration={duration}
-          seek={seek}
-          togglePlay={togglePlay}
-          playNext={playNext}
-          playPrevious={playPrevious}
-          toggleShuffle={toggleShuffle}
-          toggleRepeat={toggleRepeat}
-          shuffle={shuffle}
-          repeat={repeat}
-          loading={loading}
-          isPlaying={isPlaying}
-          isLiked={isLiked}
-          toggleLike={toggleLike}
-          setShowQueue={setShowQueue}
-          showQueue={showQueue}
-          showLyrics={showLyrics}
-          setShowLyrics={setShowLyrics}
-          onClose={() => setShowExpanded(false)}
-          setShowPlaylistModal={setShowPlaylistModal}
-          isMobile={isMobile}
-        />
-      )}
-    </AnimatePresence>
+      {showQueue && (
+        <motion.div
+          initial={{ y: '100%' }}
+          animate={{ y: 0 }}
+          exit={{ y: '100%' }}
+          transition={{ type: "spring", damping: 25 }}
+          className="fixed left-0 right-0 bottom-0 top-0 bg-background z-40"
+          drag="y"
+          dragControls={dragControls}
+          dragConstraints={{ top: 0, bottom: 0 }}
+          dragElastic={0.2}
+          onDragEnd={(e, info) => {
+            if (info.offset.y > 100) {
+              setShowQueue(false);
+            }
+          }}
+        >
+          <div className="flex items-center justify-between p-4 border-b border-white/10 select-none">
+            <h2 className="text-lg font-bold">Play Queue</h2>
+            <motion.button
+              onClick={() => setShowQueue(false)}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              className="text-gray-400 hover:text-white"
+            >
+              <X size={20} />
+            </motion.button>
+          </div>
+          
+          {/* Drag handle indicator */}
+          <div 
+            className="w-16 h-1 bg-gray-500/30 rounded-full absolute left-1/2 transform -translate-x-1/2 top-2"
+            onPointerDown={(e) => dragControls.start(e)}
+          />
 
-    {/* Mini Player */}
-    <AnimatePresence>
-      {!showExpanded && (
-        <MiniPlayer
-          currentTrack={currentTrack}
-          getTrackImage={getTrackImage}
-          formatTime={formatTime}
-          currentTime={currentTime}
-          duration={duration}
-          seek={seek}
-          togglePlay={togglePlay}
-          playNext={playNext}
-          playPrevious={playPrevious}
-          toggleShuffle={toggleShuffle}
-          toggleRepeat={toggleRepeat}
-          shuffle={shuffle}
-          repeat={repeat}
-          loading={loading}
-          isPlaying={isPlaying}
-          isLiked={isLiked}
-          toggleLike={toggleLike}
-          setShowExpanded={setShowExpanded}
-          setShowQueue={setShowQueue}
-          showQueue={showQueue}
-          volume={volume}
-          handleVolumeChange={handleVolumeChange}
-          toggleMute={toggleMute}
-          isMuted={isMuted}
-          showLyrics={showLyrics}
-          setShowLyrics={setShowLyrics}
-          isMobile={isMobile}
-        />
-      )}
-    </AnimatePresence>
-
-    {/* Queue Panel - Desktop */}
-    {!isMobile && (
-      <AnimatePresence>
-        {showQueue && (
-          <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className={`fixed right-0 top-0 w-80 bg-surface border-l border-white/5 overflow-hidden z-40 ${
-              showExpanded ? 'bottom-0' : 'bottom-24'
-            }`}
-          >
-            <div className="p-4 border-b border-white/5 flex items-center justify-between">
-              <h2 className="text-lg font-bold select-none">Play Queue</h2>
-              <motion.button
-                onClick={() => setShowQueue(false)}
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                className="text-gray-400 hover:text-white"
-              >
-                <X size={20} />
-              </motion.button>
-            </div>
-
-            <div className="overflow-y-auto h-full p-2">
-              {queue.length > 0 ? (
-                queue.map((track, index) => (
-                  <motion.div
-                    key={`${track.id}-${index}`}
-                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-light group relative"
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                  >
-                    <img
-                      src={
-                        track.track_image
-                          ? MusicAPI.getImage('albumArt', track.track_image)
-                          : '/default-album-art.png'
-                      }
-                      alt={track.title}
-                      className="w-10 h-10 rounded object-cover"
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.src = '/default-album-art.png';
-                      }}
-                      draggable="false"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div
-                        className="font-medium truncate cursor-pointer hover:text-accent transition-colors"
-                        onClick={() => navigate(`/track/${track.id}`)}
-                      >
-                        {track.title}
-                      </div>
-                      <div
-                        className="text-sm text-gray-400 truncate cursor-pointer hover:text-white transition-colors"
-                        onClick={() => navigate(`/profile/${track.artistId}`)}
-                      >
-                        {track.artist}
-                      </div>
-                    </div>
-                    <motion.button
-                      onClick={() => removeFromQueue(index)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-white"
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                    >
-                      <X size={16} />
-                    </motion.button>
-                  </motion.div>
-                ))
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                  <ListMusic size={48} className="mb-4 opacity-50" />
-                  <p className="text-sm">Your queue is empty</p>
-                  <p className="text-xs mt-2">Add some tracks to get started</p>
-                </div>
-              )}
-            </div>
-
-            {queue.length > 0 && (
-              <div className="absolute bottom-0 left-0 right-0 p-4 bg-surface border-t border-white/5">
-                <motion.button
-                  onClick={() => {
-                    clearQueue();
-                    setShowQueue(false);
-                  }}
-                  className="w-full py-2 px-4 rounded-full bg-accent hover:bg-accent/80 transition-colors text-sm font-medium"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+          <div className="overflow-y-auto h-[calc(100%-128px)] p-2">
+            {queue.length > 0 ? (
+              queue.map((track, index) => (
+                <motion.div
+                  id={`queue-item-${index}`}
+                  key={`${track.id}-${index}`}
+                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-light group relative"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  drag="x"
+                  dragConstraints={{ left: 0, right: 0 }}
+                  dragElastic={0.8}
+                  onDragEnd={(e, info) => handleSwipeItem(index, info)}
                 >
-                  Clear Queue
-                </motion.button>
+                  <img
+                    src={
+                      track.track_image
+                        ? MusicAPI.getImage('albumArt', track.track_image)
+                        : '/default-album-art.png'
+                    }
+                    alt={track.title}
+                    className="w-12 h-12 rounded object-cover select-none"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = '/default-album-art.png';
+                    }}
+                    draggable="false"
+                  />
+                  <div className="flex-1 min-w-0 select-none">
+                    <div
+                      className="font-medium truncate cursor-pointer hover:text-accent transition-colors"
+                      onClick={() => handleNavigate(`/track/${track.id}`)}
+                    >
+                      {track.title}
+                    </div>
+                    <div
+                      className="text-sm text-gray-400 truncate cursor-pointer hover:text-white transition-colors"
+                      onClick={() => handleNavigate(`/profile/${track.artistId}`)}
+                    >
+                      {track.artist}
+                    </div>
+                  </div>
+                  <motion.button
+                    onClick={() => removeFromQueue(index)}
+                    className="text-gray-400 hover:text-white"
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                  >
+                    <X size={18} />
+                  </motion.button>
+                  
+                  {/* Swipe to remove hint - appears during drag */}
+                  <motion.div 
+                    className="absolute right-0 top-0 bottom-0 flex items-center justify-center bg-red-500/80 px-3 rounded-r-lg"
+                    initial={{ opacity: 0, x: "100%" }}
+                    whileDrag={{ opacity: 1, x: 0 }}
+                  >
+                    <X size={20} className="text-white" />
+                  </motion.div>
+                </motion.div>
+              ))
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                <ListMusic size={48} className="mb-4 opacity-50" />
+                <p className="text-sm select-none">Your queue is empty</p>
+                <p className="text-xs mt-2 select-none">Add some tracks to get started</p>
               </div>
             )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    )}
+          </div>
 
-    {/* Mobile Queue Panel */}
-    {isMobile && (
-      <MobileQueue 
-        queue={queue}
-        showQueue={showQueue}
-        setShowQueue={setShowQueue}
-        navigate={navigate}
-        removeFromQueue={removeFromQueue}
-        clearQueue={clearQueue}
-      />
-    )}
-
-    {/* Playlist Selector Modal */}
-    <AnimatePresence>
-      {showPlaylistModal && currentTrack && (
-        <PlaylistSelectorModal
-          currentTrack={currentTrack}
-          onClose={() => setShowPlaylistModal(false)}
-          isMobile={isMobile}
-        />
+          {queue.length > 0 && (
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-surface border-t border-white/5">
+              <motion.button
+                onClick={() => {
+                  clearQueue();
+                  setShowQueue(false);
+                }}
+                className="w-full py-3 rounded-full bg-accent hover:bg-accent/80 transition-colors text-sm font-medium select-none"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                Clear Queue
+              </motion.button>
+            </div>
+          )}
+        </motion.div>
       )}
     </AnimatePresence>
+  );
+};
 
-    {/* Lyrics Panel */}
-    <LyricsPanel
-      showLyrics={showLyrics}
-      setShowLyrics={setShowLyrics}
-      showExpanded={showExpanded}
-      lyrics={currentTrack?.lyrics}
-      currentTime={currentTime}
-      isMobile={isMobile}
-    />
+/* ─────────────────────────────────────────────── *
+ *                   Main Player                  *
+ * ─────────────────────────────────────────────── */
+const Player = ({ children }) => {
+  // Get responsive state from context
+  const { isMobile } = useResponsive();
+  const location = useLocation();
 
-    {/* Error Toast */}
-    <AnimatePresence>
-      {error && <ErrorToast error={error} showExpanded={showExpanded} isMobile={isMobile} />}
-    </AnimatePresence>
+  // Audio Context
+  const {
+    currentTrack,
+    isPlaying,
+    duration,
+    currentTime,
+    volume,
+    repeat,
+    shuffle,
+    queue,
+    loading,
+    error,
+    togglePlay,
+    seek,
+    setVolume,
+    playNext,
+    playPrevious,
+    toggleShuffle,
+    toggleRepeat,
+    removeFromQueue,
+    clearQueue,
+    eqGains,
+    setEqGain,
+    audioContext,  // Added for visualizer
+    analyserNode   // Added for visualizer
+  } = useAudio();
 
-    {/* Main Content */}
-    <div 
-      className={`${!showExpanded ? (isMobile ? 'mb-32' : 'mb-24') : ''}`}
-      onClick={handleBackgroundTap}
-    >
-      {children}
-    </div>
-  </>
-);
+  // Local State
+  const [isMuted, setIsMuted] = useState(false);
+  const [isLiked, setIsLiked] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
+  const [showExpanded, setShowExpanded] = useState(false);
+  const [showLyrics, setShowLyrics] = useState(false);
+  const [showEQ, setShowEQ] = useState(false);
+  const [showPlaylistModal, setShowPlaylistModal] = useState(false);
+  const [prevVolume, setPrevVolume] = useState(volume);
+  const [prevPath, setPrevPath] = useState(location.pathname);
+  const navigate = useNavigate();
+
+  // Close expanded player when navigating to a different route
+  useEffect(() => {
+    if (location.pathname !== prevPath) {
+      setShowExpanded(false);
+      setShowQueue(false);
+      setShowLyrics(false);
+      setShowEQ(false);
+      setShowPlaylistModal(false);
+      setPrevPath(location.pathname);
+    }
+  }, [location.pathname, prevPath]);
+
+  // Add a class to prevent text selection throughout the app when using gesture controls
+  useEffect(() => {
+    if (isMobile) {
+      document.body.classList.add('select-none');
+      
+      // Prevent default touchmove to avoid unwanted scrolling behaviors
+      const preventDefaultScroll = (e) => {
+        if (e.target.closest('.player-controls') || 
+            e.target.closest('.art-container') ||
+            showExpanded || showQueue || showLyrics || showEQ) {
+          e.preventDefault();
+        }
+      };
+      
+      document.addEventListener('touchmove', preventDefaultScroll, { passive: false });
+      
+      return () => {
+        document.body.classList.remove('select-none');
+        document.removeEventListener('touchmove', preventDefaultScroll);
+      };
+    }
+  }, [isMobile, showExpanded, showQueue, showLyrics, showEQ]);
+
+  // For detecting background taps on mobile to close expanded views
+  const handleBackgroundTap = (e) => {
+    if (isMobile && e.target === e.currentTarget) {
+      if (showLyrics) setShowLyrics(false);
+      else if (showQueue) setShowQueue(false);
+      else if (showEQ) setShowEQ(false);
+      else if (showExpanded) setShowExpanded(false);
+    }
+  };
+
+  const formatTime = useCallback((time) => {
+    if (!time || isNaN(time)) return '0:00';
+    const minutes = Math.floor(time / 60);
+    const seconds = Math.floor(time % 60);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  }, []);
+
+  // Update local recents when track is playing
+  useEffect(() => {
+    if (currentTrack && isPlaying) {
+      LocalRecentsAPI.addRecent(currentTrack).catch((err) =>
+        console.error('Error adding to recents:', err)
+      );
+    }
+  }, [currentTrack, isPlaying]);
+
+  // Check if current track is liked
+  useEffect(() => {
+    const checkIfLiked = async () => {
+      if (!currentTrack) return;
+      try {
+        const response = await MusicAPI.getFavoriteTracks();
+        setIsLiked(response.data.tracks.some((t) => t.id === currentTrack.id));
+      } catch (err) {
+        console.error('Error checking favorite status:', err);
+      }
+    };
+    checkIfLiked();
+  }, [currentTrack]);
+
+  const toggleLike = async () => {
+    if (!currentTrack) return;
+    try {
+      // Optimistic UI update
+      setIsLiked(!isLiked);
+      
+      if (isLiked) {
+        await MusicAPI.unfavoriteTrack(currentTrack.id);
+      } else {
+        await MusicAPI.favoriteTrack(currentTrack.id);
+      }
+    } catch (err) {
+      // Revert on error
+      setIsLiked(isLiked);
+      console.error('Error toggling like:', err);
+    }
+  };
+
+  const handleVolumeChange = useCallback(
+    (e) => {
+      const newVolume = parseFloat(e.target.value);
+      setVolume(newVolume);
+      setIsMuted(newVolume === 0);
+      if (newVolume > 0) {
+        setPrevVolume(newVolume);
+      }
+    },
+    [setVolume]
+  );
+
+  const toggleMute = useCallback(() => {
+    if (isMuted) {
+      setVolume(prevVolume);
+      setIsMuted(false);
+    } else {
+      setPrevVolume(volume);
+      setVolume(0);
+      setIsMuted(true);
+    }
+  }, [isMuted, volume, prevVolume, setVolume]);
+
+  const getTrackImage = useCallback(() => {
+    if (!currentTrack) return '/default-album-art.png';
+    const imagePath = currentTrack.track_image || currentTrack.album_art;
+    if (!imagePath) return '/default-album-art.png';
+    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+      return imagePath;
+    }
+    return MusicAPI.getImage('albumArt', imagePath);
+  }, [currentTrack]);
+
+  return (
+    <>
+      {/* Expanded Player */}
+      <AnimatePresence>
+        {showExpanded && (
+          <ExpandedPlayer
+            currentTrack={currentTrack}
+            getTrackImage={getTrackImage}
+            formatTime={formatTime}
+            currentTime={currentTime}
+            duration={duration}
+            seek={seek}
+            togglePlay={togglePlay}
+            playNext={playNext}
+            playPrevious={playPrevious}
+            toggleShuffle={toggleShuffle}
+            toggleRepeat={toggleRepeat}
+            shuffle={shuffle}
+            repeat={repeat}
+            loading={loading}
+            isPlaying={isPlaying}
+            isLiked={isLiked}
+            toggleLike={toggleLike}
+            setShowQueue={setShowQueue}
+            showQueue={showQueue}
+            showLyrics={showLyrics}
+            setShowLyrics={setShowLyrics}
+            setShowEQ={setShowEQ}
+            showEQ={showEQ}
+            onClose={() => setShowExpanded(false)}
+            setShowPlaylistModal={setShowPlaylistModal}
+            isMobile={isMobile}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Mini Player */}
+      <AnimatePresence>
+        {!showExpanded && (
+          <MiniPlayer
+            currentTrack={currentTrack}
+            getTrackImage={getTrackImage}
+            formatTime={formatTime}
+            currentTime={currentTime}
+            duration={duration}
+            seek={seek}
+            togglePlay={togglePlay}
+            playNext={playNext}
+            playPrevious={playPrevious}
+            toggleShuffle={toggleShuffle}
+            toggleRepeat={toggleRepeat}
+            shuffle={shuffle}
+            repeat={repeat}
+            loading={loading}
+            isPlaying={isPlaying}
+            isLiked={isLiked}
+            toggleLike={toggleLike}
+            setShowExpanded={setShowExpanded}
+            setShowQueue={setShowQueue}
+            showQueue={showQueue}
+            volume={volume}
+            handleVolumeChange={handleVolumeChange}
+            toggleMute={toggleMute}
+            isMuted={isMuted}
+            showLyrics={showLyrics}
+            setShowLyrics={setShowLyrics}
+            setShowEQ={setShowEQ}
+            isMobile={isMobile}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Queue Panel - Desktop */}
+      {!isMobile && (
+        <AnimatePresence>
+          {showQueue && (
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              className={`fixed right-0 top-0 w-80 bg-surface border-l border-white/5 overflow-hidden z-40 ${
+                showExpanded ? 'bottom-0' : 'bottom-24'
+              }`}
+            >
+              <div className="p-4 border-b border-white/5 flex items-center justify-between">
+                <h2 className="text-lg font-bold select-none">Play Queue</h2>
+                <motion.button
+                  onClick={() => setShowQueue(false)}
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  className="text-gray-400 hover:text-white"
+                >
+                  <X size={20} />
+                </motion.button>
+              </div>
+
+              <div className="overflow-y-auto h-full p-2">
+                {queue.length > 0 ? (
+                  queue.map((track, index) => (
+                    <motion.div
+                      key={`${track.id}-${index}`}
+                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-light group relative"
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                    >
+                      <img
+                        src={
+                          track.track_image
+                            ? MusicAPI.getImage('albumArt', track.track_image)
+                            : '/default-album-art.png'
+                        }
+                        alt={track.title}
+                        className="w-10 h-10 rounded object-cover"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = '/default-album-art.png';
+                        }}
+                        draggable="false"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div
+                          className="font-medium truncate cursor-pointer hover:text-accent transition-colors"
+                          onClick={() => navigate(`/track/${track.id}`)}
+                        >
+                          {track.title}
+                        </div>
+                        <div
+                          className="text-sm text-gray-400 truncate cursor-pointer hover:text-white transition-colors"
+                          onClick={() => navigate(`/profile/${track.artistId}`)}
+                        >
+                          {track.artist}
+                        </div>
+                      </div>
+                      <motion.button
+                        onClick={() => removeFromQueue(index)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-white"
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                      >
+                        <X size={16} />
+                      </motion.button>
+                    </motion.div>
+                  ))
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                    <ListMusic size={48} className="mb-4 opacity-50" />
+                    <p className="text-sm">Your queue is empty</p>
+                    <p className="text-xs mt-2">Add some tracks to get started</p>
+                  </div>
+                )}
+              </div>
+
+              {queue.length > 0 && (
+                <div className="absolute bottom-0 left-0 right-0 p-4 bg-surface border-t border-white/5">
+                  <motion.button
+                    onClick={() => {
+                      clearQueue();
+                      setShowQueue(false);
+                    }}
+                    className="w-full py-2 px-4 rounded-full bg-accent hover:bg-accent/80 transition-colors text-sm font-medium"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    Clear Queue
+                  </motion.button>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      )}
+
+      {/* Mobile Queue Panel */}
+      {isMobile && (
+        <MobileQueue 
+          queue={queue}
+          showQueue={showQueue}
+          setShowQueue={setShowQueue}
+          navigate={navigate}
+          removeFromQueue={removeFromQueue}
+          clearQueue={clearQueue}
+        />
+      )}
+
+      {/* Playlist Selector Modal */}
+      <AnimatePresence>
+        {showPlaylistModal && currentTrack && (
+          <PlaylistSelectorModal
+            currentTrack={currentTrack}
+            onClose={() => setShowPlaylistModal(false)}
+            isMobile={isMobile}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Lyrics Panel */}
+      <LyricsPanel
+        showLyrics={showLyrics}
+        setShowLyrics={setShowLyrics}
+        showExpanded={showExpanded}
+        lyrics={currentTrack?.lyrics}
+        currentTime={currentTime}
+        isMobile={isMobile}
+      />
+      
+      {/* EQ Panel with audio visualizer */}
+      <EQPopup
+        showEQ={showEQ}
+        setShowEQ={setShowEQ}
+        isMobile={isMobile}
+      />
+
+      {/* Error Toast */}
+      <AnimatePresence>
+        {error && <ErrorToast error={error} showExpanded={showExpanded} isMobile={isMobile} />}
+      </AnimatePresence>
+
+      {/* Main Content */}
+      <div 
+        className={`${!showExpanded ? (isMobile ? 'mb-32' : 'mb-24') : ''}`}
+        onClick={handleBackgroundTap}
+      >
+        {children}
+      </div>
+    </>
+  );
 };
 
 export default Player;

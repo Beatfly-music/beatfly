@@ -1,7 +1,7 @@
-// src/pages/auth/ResetPassword.jsx
 import React, { useState } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { Music, ArrowLeft, ShieldCheck } from 'lucide-react';
 import MusicAPI from '../../services/api';
 import TitleBar from '../../components/layout/TitleBar';
 
@@ -45,13 +45,13 @@ const ResetPassword = () => {
   };
 
   return (
-    <>
-      <TitleBar />
+    <div className="h-screen flex flex-col bg-background">
+      <TitleBar className="fixed top-0 left-0 right-0 z-50" />
       <motion.div 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="min-h-screen bg-gradient-to-br from-indigo-700 via-purple-600 to-pink-500 flex items-center justify-center p-4"
+        className="flex-1 bg-gradient-to-br from-indigo-800/50 via-purple-700/50 to-blue-800/50 flex items-center justify-center p-4 pt-16"
       >
         <motion.div 
           initial={{ y: 50, opacity: 0, scale: 0.95 }}
@@ -60,15 +60,22 @@ const ResetPassword = () => {
           className="w-full max-w-md space-y-8 bg-surface p-8 rounded-lg shadow-xl"
         >
           <div className="text-center">
-            <h2 className="text-3xl font-bold text-white">Reset Password</h2>
-            <p className="mt-2 text-gray-300">Enter your new password below</p>
+            <motion.div
+              className="flex justify-center mb-4"
+            >
+              <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center">
+                <ShieldCheck size={32} className="text-white" />
+              </div>
+            </motion.div>
+            <h2 className="text-3xl font-bold text-white">New Password</h2>
+            <p className="mt-2 text-gray-300">Create a new secure password for your account</p>
           </div>
 
           {error && (
             <motion.div 
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-red-500/10 border border-red-500 text-red-500 px-4 py-3 rounded"
+              className="bg-red-500/10 border border-red-500 text-red-500 px-4 py-3 rounded-lg"
             >
               {error}
             </motion.div>
@@ -78,7 +85,7 @@ const ResetPassword = () => {
             <motion.div 
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-green-500/10 border border-green-500 text-green-500 px-4 py-3 rounded"
+              className="bg-green-500/10 border border-green-500 text-green-500 px-4 py-3 rounded-lg"
             >
               {message}
             </motion.div>
@@ -91,9 +98,10 @@ const ResetPassword = () => {
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className="mt-1 w-full rounded bg-surface-light border border-gray-600 px-4 py-2 text-white focus:border-accent focus:ring-1 focus:ring-accent"
+                className="mt-1 w-full rounded-lg bg-surface-light border border-gray-600 px-4 py-3 text-white focus:border-accent focus:ring-1 focus:ring-accent"
                 required
                 disabled={loading}
+                placeholder="Enter new password"
               />
             </div>
 
@@ -103,16 +111,19 @@ const ResetPassword = () => {
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="mt-1 w-full rounded bg-surface-light border border-gray-600 px-4 py-2 text-white focus:border-accent focus:ring-1 focus:ring-accent"
+                className="mt-1 w-full rounded-lg bg-surface-light border border-gray-600 px-4 py-3 text-white focus:border-accent focus:ring-1 focus:ring-accent"
                 required
                 disabled={loading}
+                placeholder="Confirm new password"
               />
             </div>
 
-            <button
+            <motion.button
               type="submit"
               disabled={loading}
-              className="w-full bg-accent hover:bg-accent-dark text-white py-2 px-4 rounded transition duration-200 flex items-center justify-center"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="w-full bg-accent hover:bg-accent-dark text-white py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center"
             >
               {loading ? (
                 <motion.div 
@@ -125,19 +136,22 @@ const ResetPassword = () => {
               ) : (
                 'Reset Password'
               )}
-            </button>
+            </motion.button>
           </form>
 
-          <div className="text-center text-gray-300">
-            <Link to="/login" className="hover:text-white transition-colors">
+          <div className="text-center">
+            <Link 
+              to="/login" 
+              className="inline-flex items-center gap-2 text-gray-300 hover:text-white transition-colors"
+            >
+              <ArrowLeft size={16} />
               Back to Login
             </Link>
           </div>
         </motion.div>
       </motion.div>
-    </>
+    </div>
   );
 };
 
 export default ResetPassword;
-    
