@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
-import { Music } from 'lucide-react';
+import { Music, ArrowRight } from 'lucide-react';
 import TitleBar from '../../components/layout/TitleBar';
 
 const Login = () => {
@@ -36,13 +36,13 @@ const Login = () => {
   };
 
   return (
-    <>
-      <TitleBar />
+    <div className="h-screen flex flex-col bg-background">
+      <TitleBar className="fixed top-0 left-0 right-0 z-50" />
       <motion.div 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="min-h-screen bg-gradient-to-br from-purple-700 via-blue-600 to-green-500 flex items-center justify-center p-4"
+        className="flex-1 bg-gradient-to-br from-blue-900/50 via-purple-800/50 to-blue-700/50 flex items-center justify-center p-4 pt-16"
       >
         <motion.div 
           initial={{ y: 50, opacity: 0, scale: 0.95 }}
@@ -52,13 +52,13 @@ const Login = () => {
         >
           <div className="text-center">
             <motion.div
-              animate={{ rotate: [0, 360] }}
-              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
               className="flex justify-center mb-4"
             >
-              <Music size={64} className="text-accent" />
+              <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center">
+                <Music size={32} className="text-white" />
+              </div>
             </motion.div>
-            <h2 className="text-3xl font-bold text-white">Welcome Back</h2>
+            <h2 className="text-3xl font-bold text-white">Welcome to Beatfly</h2>
             <p className="mt-2 text-gray-300">Sign in to continue your musical journey</p>
           </div>
           
@@ -66,7 +66,7 @@ const Login = () => {
             <motion.div 
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-red-500/10 border border-red-500 text-red-500 px-4 py-3 rounded"
+              className="bg-red-500/10 border border-red-500 text-red-500 px-4 py-3 rounded-lg"
             >
               {error}
             </motion.div>
@@ -79,28 +79,40 @@ const Login = () => {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 w-full rounded bg-surface-light border border-gray-600 px-4 py-2 text-white focus:border-accent focus:ring-1 focus:ring-accent"
+                className="mt-1 w-full rounded-lg bg-surface-light border border-gray-600 px-4 py-3 text-white focus:border-accent focus:ring-1 focus:ring-accent"
                 required
                 disabled={loading}
+                placeholder="Enter your email"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-200">Password</label>
+              <div className="flex justify-between items-center">
+                <label className="block text-sm font-medium text-gray-200">Password</label>
+                <Link 
+                  to="/forgot-password" 
+                  className="text-xs text-accent hover:text-accent-dark transition-colors"
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 w-full rounded bg-surface-light border border-gray-600 px-4 py-2 text-white focus:border-accent focus:ring-1 focus:ring-accent"
+                className="mt-1 w-full rounded-lg bg-surface-light border border-gray-600 px-4 py-3 text-white focus:border-accent focus:ring-1 focus:ring-accent"
                 required
                 disabled={loading}
+                placeholder="Enter your password"
               />
             </div>
 
-            <button
+            <motion.button
               type="submit"
               disabled={loading}
-              className="w-full bg-accent hover:bg-accent-dark text-white py-2 px-4 rounded transition duration-200 flex items-center justify-center"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="w-full bg-accent hover:bg-accent-dark text-white py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center"
             >
               {loading ? (
                 <motion.div 
@@ -113,26 +125,20 @@ const Login = () => {
               ) : (
                 'Sign In'
               )}
-            </button>
+            </motion.button>
           </form>
 
-          <div className="text-center text-gray-300">
-            <Link 
-              to="/forgot-password" 
-              className="block hover:text-white transition-colors"
-            >
-              Forgot your password?
-            </Link>
-            <div>
+          <div className="text-center">
+            <div className="mb-4 text-gray-300">
               Don't have an account?{' '}
-              <Link to="/register" className="text-accent hover:text-accent-dark transition-colors">
-                Sign up
+              <Link to="/register" className="text-accent hover:text-accent-dark transition-colors inline-flex items-center gap-1">
+                Sign up <ArrowRight size={16} />
               </Link>
             </div>
           </div>
         </motion.div>
       </motion.div>
-    </>
+    </div>
   );
 };
 

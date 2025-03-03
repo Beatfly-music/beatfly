@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Music } from 'lucide-react';
+import { Music, ArrowLeft } from 'lucide-react';
 import TitleBar from '../../components/layout/TitleBar';
 import MusicAPI from '../../services/api';
 
@@ -18,7 +18,6 @@ const ForgotPassword = () => {
     setLoading(true);
 
     try {
-      // Adjust the endpoint if your API uses a different route
       const response = await MusicAPI.forgotPassword(email);
       setMessage(response.data.message || 'Please check your email for reset instructions.');
     } catch (err) {
@@ -29,13 +28,13 @@ const ForgotPassword = () => {
   };
 
   return (
-    <>
-      <TitleBar />
+    <div className="h-screen flex flex-col bg-background">
+      <TitleBar className="fixed top-0 left-0 right-0 z-50" />
       <motion.div 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="min-h-screen bg-gradient-to-br from-red-600 via-purple-600 to-blue-600 flex items-center justify-center p-4"
+        className="flex-1 bg-gradient-to-br from-purple-800/50 via-blue-700/50 to-blue-900/50 flex items-center justify-center p-4 pt-16"
       >
         <motion.div 
           initial={{ y: 50, opacity: 0, scale: 0.95 }}
@@ -45,14 +44,14 @@ const ForgotPassword = () => {
         >
           <div className="text-center">
             <motion.div
-              animate={{ rotate: [0, 360] }}
-              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
               className="flex justify-center mb-4"
             >
-              <Music size={64} className="text-accent" />
+              <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center">
+                <Music size={32} className="text-white" />
+              </div>
             </motion.div>
-            <h2 className="text-3xl font-bold text-white">Forgot Password</h2>
-            <p className="mt-2 text-gray-300">Enter your email address to reset your password</p>
+            <h2 className="text-3xl font-bold text-white">Reset Password</h2>
+            <p className="mt-2 text-gray-300">Enter your email to recover your account</p>
           </div>
           
           {error && (
@@ -82,16 +81,19 @@ const ForgotPassword = () => {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 w-full rounded bg-surface-light border border-gray-600 px-4 py-2 text-white focus:border-accent focus:ring-1 focus:ring-accent"
+                className="mt-1 w-full rounded-lg bg-surface-light border border-gray-600 px-4 py-3 text-white focus:border-accent focus:ring-1 focus:ring-accent"
                 required
                 disabled={loading}
+                placeholder="Enter your email address"
               />
             </div>
 
-            <button
+            <motion.button
               type="submit"
               disabled={loading}
-              className="w-full bg-accent hover:bg-accent-dark text-white py-2 px-4 rounded transition duration-200 flex items-center justify-center"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="w-full bg-accent hover:bg-accent-dark text-white py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center"
             >
               {loading ? (
                 <motion.div 
@@ -104,20 +106,21 @@ const ForgotPassword = () => {
               ) : (
                 'Send Reset Link'
               )}
-            </button>
+            </motion.button>
           </form>
 
-          <div className="text-center text-gray-300">
+          <div className="text-center">
             <Link 
               to="/login" 
-              className="block hover:text-white transition-colors"
+              className="inline-flex items-center gap-2 text-gray-300 hover:text-white transition-colors"
             >
+              <ArrowLeft size={16} />
               Back to Login
             </Link>
           </div>
         </motion.div>
       </motion.div>
-    </>
+    </div>
   );
 };
 
