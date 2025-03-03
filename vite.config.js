@@ -1,11 +1,14 @@
-// vite.config.js
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+// Determine if we're building for Electron or web
+const isElectron = process.env.ELECTRON === 'true'
+
 export default defineConfig({
   plugins: [react()],
-  base: './', // This is critical - it makes all paths relative
+  // Use absolute paths for web deployment, but relative for Electron
+  base: isElectron ? './' : '/',
   server: {
     port: 3000
   },
@@ -13,6 +16,7 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     assetsDir: 'assets',
+    // Ensure proper publicPath handling
     rollupOptions: {
       output: {
         manualChunks: {
@@ -29,6 +33,11 @@ export default defineConfig({
           ]
         }
       }
+    }
+  },
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src')
     }
   }
 })
