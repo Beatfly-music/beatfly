@@ -22,103 +22,103 @@ export const MusicAPI = {
   register: (data) => api.post('/account.register', data),
   getProfile: () => api.get('/account.profile'),
   forgotPassword: (email) => api.post('/account.forgotPassword', { email }),
-  resetPassword: (data) => api.post('/account.resetPassword', data),
+    resetPassword: (data) => api.post('/account.resetPassword', data),
 
-  // ========== Music Management ==========
-  createAlbum: (data, progressCallback) => {
-    return api.post('/music/album.create', data, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      onUploadProgress: progressCallback
-    });
-  },
-  getAlbum: (albumId) => api.get(`/music/album/${albumId}`),
-  editAlbum: (albumId, data) => api.put(`/music/album.edit/${albumId}`, data),
-  deleteAlbum: (albumId) => api.delete(`/music/album.delete/${albumId}`),
-
-  // ========== Individual Track Upload ==========
-  // Updated to match the new route using multer's single() middleware
-  addTrackToAlbum: (albumId, trackFile, metadata, progressCallback) => {
-    // Create a new FormData and append the track file with the correct field name
-    const formData = new FormData();
-    formData.append('trackFile', trackFile);
-    
-    // Add metadata fields
-    if (metadata) {
-      Object.keys(metadata).forEach(key => {
-        formData.append(key, metadata[key]);
+    // ========== Music Management ==========
+    createAlbum: (data, progressCallback) => {
+      return api.post('/music/album.create', data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: progressCallback
       });
-    }
-    
-    return api.post(`/music/album/${albumId}/track.add`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      onUploadProgress: progressCallback
-    });
-  },
-  deleteTrack: (albumId, trackId) => api.delete(`/music/album/${albumId}/track/${trackId}`),
+    },
+    getAlbum: (albumId) => api.get(`/music/album/${albumId}`),
+    editAlbum: (albumId, data) => api.put(`/music/album.edit/${albumId}`, data),
+    deleteAlbum: (albumId) => api.delete(`/music/album.delete/${albumId}`),
 
-  // ========== Track Management ==========
-  getTrack: (trackId) => api.get(`/music/track/${trackId}`),
-  streamTrack: (trackId) => {
-    const token = localStorage.getItem('token');
-    return {
-      url: `${api.defaults.baseURL}/music/stream/${trackId}`,
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  },
+    // ========== Individual Track Upload ==========
+    // Updated to match the new route using multer's single() middleware
+    addTrackToAlbum: (albumId, trackFile, metadata, progressCallback) => {
+      // Create a new FormData and append the track file with the correct field name
+      const formData = new FormData();
+      formData.append('trackFile', trackFile);
 
-  // ========== Playlist Management ==========
-  getPlaylists: () => api.get('/music/playlists'),
-  createPlaylist: (data) => api.post('/music/playlist.create', data),
-  editPlaylist: (playlistId, data) => api.put(`/music/playlist.edit/${playlistId}`, data),
-  deletePlaylist: (playlistId) => api.delete(`/music/playlist.delete/${playlistId}`),
-  addToPlaylist: (playlistId, trackId) => api.post('/music/playlist.addTrack', { playlistId, trackId }),
-  removeFromPlaylist: (playlistId, trackId) =>
+      // Add metadata fields
+      if (metadata) {
+        Object.keys(metadata).forEach(key => {
+          formData.append(key, metadata[key]);
+        });
+      }
+
+      return api.post(`/music/album/${albumId}/track.add`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: progressCallback
+      });
+    },
+    deleteTrack: (albumId, trackId) => api.delete(`/music/album/${albumId}/track/${trackId}`),
+
+    // ========== Track Management ==========
+    getTrack: (trackId) => api.get(`/music/track/${trackId}`),
+    streamTrack: (trackId) => {
+      const token = localStorage.getItem('token');
+      return {
+        url: `${api.defaults.baseURL}/music/stream/${trackId}`,
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      };
+    },
+
+    // ========== Playlist Management ==========
+    getPlaylists: () => api.get('/music/playlists'),
+    createPlaylist: (data) => api.post('/music/playlist.create', data),
+    editPlaylist: (playlistId, data) => api.put(`/music/playlist.edit/${playlistId}`, data),
+    deletePlaylist: (playlistId) => api.delete(`/music/playlist.delete/${playlistId}`),
+    addToPlaylist: (playlistId, trackId) => api.post('/music/playlist.addTrack', { playlistId, trackId }),
+    removeFromPlaylist: (playlistId, trackId) =>
     api.delete('/music/playlist.removeTrack', { data: { playlistId, trackId } }),
 
-  // ========== Favorite Management ==========
-  getFavorites: () => api.get('/music/favourite.all'),
-  favoriteTrack: (trackId) => api.post('/music/favourite.track', { trackId }),
-  unfavoriteTrack: (trackId) => api.delete(`/music/favourite.track/${trackId}`),
-  favoriteAlbum: (albumId) => api.post('/music/favourite.album', { albumId }),
-  unfavoriteAlbum: (albumId) => api.delete(`/music/favourite.album/${albumId}`),
-  favoriteArtist: (artistId) => api.post('/music/favourite.artist', { artistId }),
-  unfavoriteArtist: (artistId) => api.delete(`/music/favourite.artist/${artistId}`),
-  getFavoriteTracks: () => api.get('/music/favourite.tracks'),
+    // ========== Favorite Management ==========
+    getFavorites: () => api.get('/music/favourite.all'),
+    favoriteTrack: (trackId) => api.post('/music/favourite.track', { trackId }),
+    unfavoriteTrack: (trackId) => api.delete(`/music/favourite.track/${trackId}`),
+    favoriteAlbum: (albumId) => api.post('/music/favourite.album', { albumId }),
+    unfavoriteAlbum: (albumId) => api.delete(`/music/favourite.album/${albumId}`),
+    favoriteArtist: (artistId) => api.post('/music/favourite.artist', { artistId }),
+    unfavoriteArtist: (artistId) => api.delete(`/music/favourite.artist/${artistId}`),
+    getFavoriteTracks: () => api.get('/music/favourite.tracks'),
 
-  // ========== Profile Management ==========
-  getUserProfile: () => api.get('/profile.get'),
-  updateUserProfile: (data) =>
+    // ========== Profile Management ==========
+    getUserProfile: () => api.get('/profile.get'),
+    updateUserProfile: (data) =>
     api.post('/profile.update', data, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
-  getArtistProfile: (user_id) => api.get('/artist.getProfile', { params: { user_id } }),
-  updateArtistProfile: (data) => api.post('/artist.updateProfile', data),
+    getArtistProfile: (user_id) => api.get('/artist.getProfile', { params: { user_id } }),
+    updateArtistProfile: (data) => api.post('/artist.updateProfile', data),
 
-  // ========== Search ==========
-  search: (query) => api.get('/search', { params: { q: query } }),
+    // ========== Search ==========
+    search: (query) => api.get('/search', { params: { q: query } }),
 
-  // ========== Featured Content ==========
-  getFeaturedAlbums: () => api.get('/music.featuredAlbums'),
+    // ========== Featured Content ==========
+    getFeaturedAlbums: () => api.get('/music.featuredAlbums'),
 
-  // ========== Recommendations ==========
-  getRecommendations: () => api.get('/music.recommendations'),
+    // ========== Recommendations ==========
+    getRecommendations: () => api.get('/music.recommendations'),
 
-  // ========== Single Playlist ==========
-  getPlaylist: (playlistId) => api.get(`/music/playlist/${playlistId}`),
+    // ========== Single Playlist ==========
+    getPlaylist: (playlistId) => api.get(`/music/playlist/${playlistId}`),
 
-  // ========== Images ==========
-  getImage: (folder, imageName) => {
-    if (typeof imageName !== 'string') return '';
-    if (imageName.startsWith('uploads/')) {
-      imageName = imageName.substring(imageName.lastIndexOf('/') + 1);
-    }
-    return `https://api.beatfly-music.xyz/xrpc/images/${folder}/${imageName}`;
-  },
+    // ========== Images ==========
+    getImage: (folder, imageName) => {
+      if (typeof imageName !== 'string') return '';
+      if (imageName.startsWith('uploads/')) {
+        imageName = imageName.substring(imageName.lastIndexOf('/') + 1);
+      }
+      return `https://api.beatfly-music.xyz/xrpc/images/${folder}/${imageName}`;
+    },
 
-  // ========== Reporting ==========
-  reportArtist: (data) =>
+    // ========== Reporting ==========
+    reportArtist: (data) =>
     api.post('/report.artist', data, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),

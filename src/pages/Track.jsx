@@ -1,34 +1,57 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { 
-  Play, 
-  Pause, 
-  Heart, 
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Play,
+  Pause,
+  Heart,
   Share2,
   MoreHorizontal,
   Clock,
-  PlayCircle
+  PlayCircle,
+  Disc,
+  Music,
+  Sparkles
 } from 'lucide-react';
 import { useAudio } from '../contexts/AudioContext';
 import MusicAPI from '../services/api';
 
+// Toast notification component
+const Toast = ({ message, isVisible }) => (
+  <AnimatePresence>
+  {isVisible && (
+    <motion.div
+    initial={{ opacity: 0, y: 50 }}
+    animate={{ opacity: 1, y: 0 }}
+    exit={{ opacity: 0, y: 50 }}
+    className="fixed bottom-24 left-1/2 transform -translate-x-1/2
+    bg-accent text-white px-6 py-3 rounded-full text-sm
+    shadow-2xl z-50 flex items-center gap-2"
+    >
+    <Sparkles size={16} />
+    {message}
+    </motion.div>
+  )}
+  </AnimatePresence>
+);
+
 const Track = () => {
   const { trackId } = useParams();
-  const { 
-    playTrack, 
-    currentTrack, 
-    isPlaying, 
+  const {
+    playTrack,
+    currentTrack,
+    isPlaying,
     togglePlay,
-    addToQueue 
+    addToQueue
   } = useAudio();
-  
+
   const [track, setTrack] = useState(null);
   const [album, setAlbum] = useState(null);
   const [isLiked, setIsLiked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [showPlaylistModal, setShowPlaylistModal] = useState(false);
+  const [hoveredTrack, setHoveredTrack] = useState(null);
+  const [toast, setToast] = useState({ visible: false, message: '' });
 
   useEffect(() => {
     const fetchData = async () => {
@@ -55,6 +78,11 @@ const Track = () => {
     fetchData();
   }, [trackId]);
 
+  const showToast = (message) => {
+    setToast({ visible: true, message });
+    setTimeout(() => setToast({ visible: false, message: '' }), 3000);
+  };
+
   const toggleLike = async () => {
     try {
       if (isLiked) {
@@ -63,6 +91,7 @@ const Track = () => {
         await MusicAPI.favoriteTrack(trackId);
       }
       setIsLiked(!isLiked);
+      showToast(isLiked ? 'Removed from favorites' : 'Added to favorites');
     } catch (err) {
       console.error('Error toggling like:', err);
     }
@@ -71,6 +100,7 @@ const Track = () => {
   const handleAddToQueue = () => {
     if (track) {
       addToQueue(track);
+      showToast(`Added "${track.title}" to queue`);
     }
   };
 
@@ -81,6 +111,9 @@ const Track = () => {
         text: `Check out ${track.title} by ${track.artist}`,
         url: window.location.href
       }).catch((error) => console.log('Error sharing:', error));
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      showToast('Link copied to clipboard');
     }
   };
 
@@ -94,7 +127,12 @@ const Track = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+      <motion.div
+      animate={{ rotate: 360 }}
+      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+      >
+      <Music className="w-12 h-12 text-accent" />
+      </motion.div>
       </div>
     );
   }
@@ -102,7 +140,20 @@ const Track = () => {
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-red-500">{error}</div>
+      <motion.div
+      initial={{ scale: 0 }}
+      animate={{ scale: 1 }}
+      className="text-center"
+      >
+      <div className="text-red-500 text-xl mb-4">{error}</div>
+      <button
+      onClick={() => window.location.reload()}
+      className="px-6 py-3 bg-accent rounded-full text-white hover:bg-accent-dark
+      transition-all duration-300 transform hover:scale-105"
+      >
+      Retry
+      </button>
+      </motion.div>
       </div>
     );
   }
@@ -112,180 +163,277 @@ const Track = () => {
   const isCurrentTrack = currentTrack?.id === track.id;
 
   return (
-    <div className="min-h-screen pb-24">
-      {/* Hero Section */}
-      <div className="relative h-[400px]">
-        {/* Background Image */}
-        <div className="absolute inset-0 bg-gradient-to-b from-surface/90 to-background">
-          <img 
-            src={track.track_image + "?h=60"}
-            alt=""
-            className="w-full h-full object-cover opacity-30 blur-md"
-          />
-        </div>
+    <motion.div
+    className="min-h-screen pb-24 bg-gradient-to-b from-surface to-background"
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    transition={{ duration: 0.5 }}
+    >
+    {/* Hero Section */}
+    <div className="relative h-[500px] overflow-hidden">
+    {/* Animated Background */}
+    <motion.div
+    className="absolute inset-0"
+    initial={{ scale: 1.2 }}
+    animate={{ scale: 1 }}
+    transition={{ duration: 20, repeat: Infinity, direction: "alternate" }}
+    >
+    <img
+    src={track.track_image + "?h=100"}
+    alt=""
+    className="w-full h-full object-cover"
+    />
+    <div className="absolute inset-0 backdrop-blur-3xl bg-black/70" />
+    </motion.div>
 
-        {/* Content */}
-        <div className="relative z-10 h-full container mx-auto px-4 py-8 flex items-end">
-          <div className="flex flex-col md:flex-row items-start md:items-end gap-8">
-            {/* Track Image */}
-            <div className="relative group shrink-0">
-              <img 
-                src={track.track_image + "?h=256"}
-                alt={track.title}
-                className="w-48 h-48 md:w-64 md:h-64 object-cover rounded-lg shadow-2xl"
-                onError={(e) => {
-                  e.target.onerror = null;
-                  e.target.src = '/default-album-art.png';
-                }}
-              />
-              <button
-                onClick={() => isCurrentTrack ? togglePlay() : playTrack(track)}
-                className="absolute inset-0 flex items-center justify-center bg-black/60 
-                         opacity-0 group-hover:opacity-100 transition-opacity rounded-lg"
-              >
-                {isCurrentTrack && isPlaying ? (
-                  <Pause size={48} className="text-white" />
-                ) : (
-                  <Play size={48} className="text-white ml-2" />
-                )}
-              </button>
-            </div>
+    <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
 
-            {/* Track Info */}
-            <div className="flex-1">
-              <h5 className="text-sm text-white/80 mb-2">Song</h5>
-              <h1 className="text-4xl md:text-6xl font-bold mb-4">{track.title}</h1>
-              <div className="flex items-center gap-2 text-sm">
-                {track.artistId ? (
-                  <Link 
-                    to={`/profile/${track.artistId}`}
-                    className="text-white/60 hover:text-white transition-colors"
-                  >
-                    {track.artist}
-                  </Link>
-                ) : (
-                  <span className="text-white/60">{track.artist}</span>
-                )}
-                {album && (
-                  <>
-                    <span className="text-white/60">•</span>
-                    <Link 
-                      to={`/album/${album.id}`}
-                      className="text-white/60 hover:text-white transition-colors"
-                    >
-                      {album.title}
-                    </Link>
-                  </>
-                )}
-                <span className="text-white/60">•</span>
-                <span className="text-white/60">{formatDuration(track.duration)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+    {/* Content */}
+    <div className="relative z-10 h-full container mx-auto px-4 py-8 flex items-end">
+    <motion.div
+    className="flex flex-col md:flex-row items-start md:items-end gap-8 w-full"
+    initial={{ y: 50, opacity: 0 }}
+    animate={{ y: 0, opacity: 1 }}
+    transition={{ type: "spring", stiffness: 100 }}
+    >
+    {/* Track Image */}
+    <motion.div
+    className="relative group shrink-0"
+    whileHover={{ scale: 1.05 }}
+    transition={{ type: "spring", stiffness: 200 }}
+    >
+    <img
+    src={track.track_image + "?h=320"}
+    alt={track.title}
+    className="w-48 h-48 md:w-72 md:h-72 object-cover rounded-xl shadow-2xl"
+    onError={(e) => {
+      e.target.onerror = null;
+      e.target.src = '/default-album-art.png';
+    }}
+    />
+    <motion.button
+    onClick={() => isCurrentTrack ? togglePlay() : playTrack(track)}
+    className="absolute inset-0 flex items-center justify-center bg-black/60
+    opacity-0 group-hover:opacity-100 transition-opacity rounded-xl"
+    whileHover={{ backgroundColor: "rgba(0,0,0,0.8)" }}
+    >
+    <motion.div
+    whileHover={{ scale: 1.1 }}
+    whileTap={{ scale: 0.9 }}
+    >
+    {isCurrentTrack && isPlaying ? (
+      <Pause size={60} className="text-white" />
+    ) : (
+      <Play size={60} className="text-white ml-2" />
+    )}
+    </motion.div>
+    </motion.button>
+    </motion.div>
 
-      {/* Actions Bar */}
-      <div className="container mx-auto px-4 py-6">
-        <div className="flex items-center gap-4">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => isCurrentTrack ? togglePlay() : playTrack(track)}
-            className="w-14 h-14 bg-accent rounded-full flex items-center justify-center 
-                     shadow-lg hover:bg-accent/80 transition-colors"
-          >
-            {isCurrentTrack && isPlaying ? (
-              <Pause size={28} className="text-white" />
-            ) : (
-              <Play size={28} className="text-white ml-1" />
-            )}
-          </motion.button>
+    {/* Track Info */}
+    <div className="flex-1 space-y-4">
+    <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ delay: 0.1 }}
+    >
+    <h5 className="text-sm text-white/60 mb-2 flex items-center gap-2">
+    <Music size={16} />
+    Song
+    </h5>
+    <h1 className="text-4xl md:text-7xl font-bold text-white mb-4">
+    {track.title}
+    </h1>
+    </motion.div>
 
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={toggleLike}
-            className={`p-2 ${isLiked ? 'text-accent' : 'text-gray-400 hover:text-white'}`}
-          >
-            <Heart 
-              size={24} 
-              fill={isLiked ? 'currentColor' : 'none'}
-              className="transition-colors duration-300"
-            />
-          </motion.button>
+    <motion.div
+    className="flex items-center gap-4 text-base"
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ delay: 0.2 }}
+    >
+    <motion.div
+    whileHover={{ scale: 1.05 }}
+    className="flex items-center gap-2"
+    >
+    {track.artistId ? (
+      <Link
+      to={`/profile/${track.artistId}`}
+      className="text-white/60 hover:text-white transition-colors font-medium"
+      >
+      {track.artist}
+      </Link>
+    ) : (
+      <span className="text-white/60 font-medium">{track.artist}</span>
+    )}
+    </motion.div>
 
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={handleAddToQueue}
-            className="p-2 text-gray-400 hover:text-white"
-            title="Add to queue"
-          >
-            <PlayCircle size={24} />
-          </motion.button>
+    {album && (
+      <>
+      <span className="text-white/40">•</span>
+      <motion.div whileHover={{ scale: 1.05 }}>
+      <Link
+      to={`/album/${album.id}`}
+      className="text-white/60 hover:text-white transition-colors flex items-center gap-2"
+      >
+      <Disc size={16} />
+      {album.title}
+      </Link>
+      </motion.div>
+      </>
+    )}
 
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={handleShare}
-            className="p-2 text-gray-400 hover:text-white"
-            title="Share track"
-          >
-            <Share2 size={24} />
-          </motion.button>
-        </div>
-      </div>
-
-      {/* Album Context */}
-      {album && album.tracks && (
-        <div className="container mx-auto px-4 mt-8">
-          <h2 className="text-2xl font-bold mb-6">From the Album</h2>
-          <div className="space-y-1">
-            {album.tracks.map((albumTrack, index) => {
-              const isCurrentAlbumTrack = currentTrack?.id === albumTrack.id;
-              
-              return (
-                <motion.div
-                  key={albumTrack.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  className={`flex items-center gap-4 p-3 rounded-md hover:bg-surface-light group cursor-pointer
-                           ${isCurrentAlbumTrack ? 'text-accent' : ''}`}
-                  onClick={() => playTrack(albumTrack)}
-                >
-                  <div className="w-8 text-sm text-gray-400 group-hover:text-white text-center">
-                    {isCurrentAlbumTrack && isPlaying ? (
-                      <div className="w-4 h-4 mx-auto relative">
-                        <span className="absolute w-1 h-4 bg-accent rounded-full animate-music-bar-1"></span>
-                        <span className="absolute w-1 h-4 bg-accent rounded-full animate-music-bar-2 ml-1.5"></span>
-                        <span className="absolute w-1 h-4 bg-accent rounded-full animate-music-bar-3 ml-3"></span>
-                      </div>
-                    ) : (
-                      index + 1
-                    )}
-                  </div>
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">
-                      {albumTrack.title}
-                    </div>
-                    <div className="text-sm text-gray-400 truncate">
-                      {albumTrack.artist}
-                    </div>
-                  </div>
-                  
-                  <div className="text-sm text-gray-400">
-                    {formatDuration(albumTrack.duration)}
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+    <span className="text-white/40">•</span>
+    <span className="text-white/60 flex items-center gap-2">
+    <Clock size={16} />
+    {formatDuration(track.duration)}
+    </span>
+    </motion.div>
     </div>
+    </motion.div>
+    </div>
+    </div>
+
+    {/* Actions Bar */}
+    <motion.div
+    className="container mx-auto px-4 py-8"
+    initial={{ y: 20, opacity: 0 }}
+    animate={{ y: 0, opacity: 1 }}
+    transition={{ delay: 0.3 }}
+    >
+    <div className="flex items-center gap-4">
+    <motion.button
+    whileHover={{ scale: 1.05 }}
+    whileTap={{ scale: 0.95 }}
+    onClick={() => isCurrentTrack ? togglePlay() : playTrack(track)}
+    className="w-16 h-16 bg-accent rounded-full flex items-center justify-center
+    shadow-2xl hover:shadow-accent/50 transition-all duration-300"
+    >
+    {isCurrentTrack && isPlaying ? (
+      <Pause size={32} className="text-white" />
+    ) : (
+      <Play size={32} className="text-white ml-1" />
+    )}
+    </motion.button>
+
+    <motion.button
+    whileHover={{ scale: 1.1 }}
+    whileTap={{ scale: 0.9 }}
+    onClick={toggleLike}
+    className={`p-3 rounded-full transition-all duration-300 ${
+      isLiked ? 'text-accent bg-accent/20' : 'text-gray-400 hover:text-white hover:bg-white/10'
+    }`}
+    >
+    <Heart
+    size={28}
+    fill={isLiked ? 'currentColor' : 'none'}
+    className="transition-all duration-300"
+    />
+    </motion.button>
+
+    <motion.button
+    whileHover={{ scale: 1.1 }}
+    whileTap={{ scale: 0.9 }}
+    onClick={handleAddToQueue}
+    className="p-3 rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition-all duration-300"
+    title="Add to queue"
+    >
+    <PlayCircle size={28} />
+    </motion.button>
+
+    <motion.button
+    whileHover={{ scale: 1.1 }}
+    whileTap={{ scale: 0.9 }}
+    onClick={handleShare}
+    className="p-3 rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition-all duration-300"
+    title="Share track"
+    >
+    <Share2 size={28} />
+    </motion.button>
+    </div>
+    </motion.div>
+
+    {/* Album Context */}
+    {album && album.tracks && (
+      <motion.div
+      className="container mx-auto px-4 mt-8"
+      initial={{ y: 50, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ delay: 0.4 }}
+      >
+      <h2 className="text-3xl font-bold mb-8 text-white flex items-center gap-3">
+      <Disc className="text-accent" />
+      From the Album
+      </h2>
+
+      <div className="bg-surface/30 backdrop-blur-sm rounded-xl p-6 space-y-2">
+      {album.tracks.map((albumTrack, index) => {
+        const isCurrentAlbumTrack = currentTrack?.id === albumTrack.id;
+
+        return (
+          <motion.div
+          key={albumTrack.id}
+          initial={{ opacity: 0, x: -30 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: index * 0.05 }}
+          whileHover={{ x: 10 }}
+          onMouseEnter={() => setHoveredTrack(albumTrack.id)}
+          onMouseLeave={() => setHoveredTrack(null)}
+          className={`flex items-center gap-4 p-4 rounded-lg hover:bg-white/5
+            group cursor-pointer transition-all duration-200
+            ${isCurrentAlbumTrack ? 'bg-accent/10 text-accent' : ''}`}
+            onClick={() => playTrack(albumTrack)}
+            >
+            <div className="w-12 text-center">
+            <AnimatePresence mode="wait">
+            {hoveredTrack === albumTrack.id || (isCurrentAlbumTrack && isPlaying) ? (
+              <motion.div
+              key="play"
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0 }}
+              >
+              {isCurrentAlbumTrack && isPlaying ? (
+                <Pause size={20} />
+              ) : (
+                <Play size={20} />
+              )}
+              </motion.div>
+            ) : (
+              <motion.span
+              key="number"
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0 }}
+              className="text-gray-400"
+              >
+              {index + 1}
+              </motion.span>
+            )}
+            </AnimatePresence>
+            </div>
+
+            <div className="flex-1 min-w-0">
+            <div className="font-semibold text-white truncate">
+            {albumTrack.title}
+            </div>
+            <div className="text-sm text-gray-400 truncate">
+            {albumTrack.artist}
+            </div>
+            </div>
+
+            <div className="text-sm text-gray-400">
+            {formatDuration(albumTrack.duration)}
+            </div>
+            </motion.div>
+        );
+      })}
+      </div>
+      </motion.div>
+    )}
+
+    <Toast message={toast.message} isVisible={toast.visible} />
+    </motion.div>
   );
 };
 

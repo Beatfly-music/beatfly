@@ -1,59 +1,145 @@
-import React, { useState, useEffect } from 'react';
-import { Play, Pause, Sun, Coffee, Sunset, Moon, Loader } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Play, Pause, Sun, Coffee, Sunset, Moon, CloudRain, Cloud, Loader } from 'lucide-react';
 import { useAudio } from '../contexts/AudioContext';
 import { useNavigate } from 'react-router-dom';
 import MusicAPI from '../services/api';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
-// MarqueeText Component for infinite scrolling (right-to-left) with dynamic fade colors
-const MarqueeText = ({ text, className = '' }) => {
-  const baseDuration = 20;
-  const duration = Math.max(baseDuration, text.length * 0.4);
-
-  // Determine fade color based on the current hour
-  const getFadeColor = () => {
-    const hour = new Date().getHours();
-    if (hour < 5) return "#1a1a1a";     // dark (night)
-    if (hour < 12) return "#FFA500";     // orange (morning)
-    if (hour < 17) return "#87CEEB";     // sky blue (afternoon)
-    if (hour < 22) return "#800080";     // purple (evening)
-    return "#1a1a1a";                   // fallback
-  };
-
-  const fadeColor = getFadeColor();
+// Fixed MarqueeText with stable animation
+const MarqueeText = ({ text, className = '', speed = 30 }) => {
+  // Use a stable key to prevent re-mounting
+  const stableKey = useRef(Math.random()).current;
+  const duration = Math.max(speed, text.length * 0.3);
 
   return (
     <div className={`relative overflow-hidden ${className}`}>
-      {/* Left Fade */}
-      <div
-        className="absolute left-0 top-0 bottom-0 w-8 z-10"
-        style={{ background: `linear-gradient(to right, ${fadeColor} 0%, transparent 100%)` }}
-      ></div>
-      
-      <motion.div
-        className="flex whitespace-nowrap"
-        animate={{ x: [0, "-50%"] }}
-        transition={{
-          x: {
-            duration: duration,
-            ease: "linear",
-            repeat: Infinity,
-            repeatType: "loop"
-          }
-        }}
-      >
-        <span className="mr-12">{text}</span>
-        <span className="mr-12">{text}</span>
-      </motion.div>
-      
-      {/* Right Fade */}
-      <div
-        className="absolute right-0 top-0 bottom-0 w-8 z-10"
-        style={{ background: `linear-gradient(to left, ${fadeColor} 0%, transparent 100%)` }}
-      ></div>
+    <motion.div
+    key={stableKey} // Stable key prevents remounting
+    className="flex whitespace-nowrap"
+    animate={{ x: [0, "-50%"] }}
+    transition={{
+      x: {
+        duration: duration,
+        ease: "linear",
+        repeat: Infinity,
+        repeatType: "loop"
+      }
+    }}
+    >
+    <span className="pr-8">{text}</span>
+    <span className="pr-8">{text}</span>
+    </motion.div>
     </div>
   );
 };
+
+// Memoized animated background to prevent re-renders
+const AnimatedBackground = React.memo(({ children }) => {
+  const hour = new Date().getHours();
+  const particles = useMemo(() => {
+    const particleCount = hour >= 18 || hour < 6 ? 50 : 30;
+    return Array.from({ length: particleCount }, (_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+                                                            y: Math.random() * 100,
+                                                            size: Math.random() * 3 + 1,
+                                                            duration: Math.random() * 20 + 10
+    }));
+  }, [hour]);
+
+  const getGradientColors = () => {
+    if (hour < 5) return ["#0a0a0a", "#1a1a2e", "#16213e"];
+    if (hour < 7) return ["#355C7D", "#6C5B7B", "#C06C84"];
+    if (hour < 12) return ["#F8B195", "#F67280", "#C06C84"];
+    if (hour < 17) return ["#A8E6CF", "#7FD8BE", "#FFD3B6"];
+    if (hour < 19) return ["#FF6B6B", "#C44536", "#772E25"];
+    if (hour < 22) return ["#355C7D", "#2C3E50", "#1C2833"];
+    return ["#0a0a0a", "#1a1a2e", "#16213e"];
+  };
+
+  const colors = getGradientColors();
+
+  return (
+    <div className="relative overflow-hidden">
+    <motion.div
+    className="absolute inset-0"
+    animate={{
+      background: [
+        `linear-gradient(135deg, ${colors[0]} 0%, ${colors[1]} 50%, ${colors[2]} 100%)`,
+          `linear-gradient(135deg, ${colors[2]} 0%, ${colors[0]} 50%, ${colors[1]} 100%)`,
+          `linear-gradient(135deg, ${colors[1]} 0%, ${colors[2]} 50%, ${colors[0]} 100%)`
+      ]
+    }}
+    transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+    />
+
+    {particles.map(particle => (
+      <motion.div
+      key={particle.id}
+      className="absolute rounded-full"
+      style={{
+        left: `${particle.x}%`,
+        top: `${particle.y}%`,
+        width: particle.size,
+        height: particle.size,
+        backgroundColor: hour >= 18 || hour < 6 ? '#ffffff' : '#ffffff40'
+      }}
+      animate={{
+        y: hour >= 18 || hour < 6 ? [0, 10, 0] : [0, 100],
+        opacity: hour >= 18 || hour < 6 ? [0.2, 0.8, 0.2] : [0.6, 0, 0.6]
+      }}
+      transition={{
+        duration: particle.duration,
+        repeat: Infinity,
+        ease: "easeInOut"
+      }}
+      />
+    ))}
+
+    <div className="relative z-10">{children}</div>
+    </div>
+  );
+});
+
+// Memoized TimeIcon to prevent re-renders
+const TimeIcon = React.memo(() => {
+  const hour = new Date().getHours();
+
+  const getIcon = () => {
+    if (hour < 5) return Moon;
+    if (hour < 12) return Coffee;
+    if (hour < 17) return Sun;
+    if (hour < 22) return Sunset;
+    return Moon;
+  };
+
+  const Icon = getIcon();
+
+  return (
+    <motion.div
+    animate={{
+      rotate: hour >= 12 && hour < 17 ? 360 : 0,
+      scale: hour >= 18 || hour < 6 ? [1, 1.2, 1] : 1,
+    }}
+    transition={{
+      rotate: { duration: 20, repeat: Infinity, ease: "linear" },
+      scale: { duration: 3, repeat: Infinity, ease: "easeInOut" }
+    }}
+    className="relative"
+    >
+    <Icon size={40} className="text-white drop-shadow-lg" />
+    {hour >= 12 && hour < 17 && (
+      <motion.div
+      className="absolute inset-0 blur-xl"
+      animate={{ opacity: [0.3, 0.6, 0.3] }}
+      transition={{ duration: 2, repeat: Infinity }}
+      >
+      <Sun size={40} className="text-yellow-300" />
+      </motion.div>
+    )}
+    </motion.div>
+  );
+});
 
 const Home = () => {
   const navigate = useNavigate();
@@ -62,44 +148,34 @@ const Home = () => {
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [hoveredAlbum, setHoveredAlbum] = useState(null);
   const { currentTrack, isPlaying, playTrack } = useAudio();
 
-  // Responsive state for mobile improvements.
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const isMobile = windowWidth < 640;
+
+  // Memoized greeting to prevent re-calculation
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    const greetings = {
+      night: ['Sweet Dreams', 'Night Owl', 'Midnight Vibes'],
+      morning: ['Rise & Shine', 'Good Morning', 'Fresh Start'],
+      afternoon: ['Good Afternoon', 'Midday Mix', 'Afternoon Delight'],
+      evening: ['Good Evening', 'Wind Down', 'Evening Chill']
+    };
+
+    if (hour < 5) return greetings.night[0];
+    if (hour < 12) return greetings.morning[0];
+    if (hour < 17) return greetings.afternoon[0];
+    if (hour < 22) return greetings.evening[0];
+    return greetings.night[0];
+  }, []);
+
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-
-  const getTimeIcon = () => {
-    const hour = new Date().getHours();
-    if (hour < 5) return <Moon size={32} className="text-white/80" />;
-    if (hour < 12) return <Coffee size={32} className="text-white/80" />;
-    if (hour < 17) return <Sun size={32} className="text-white/80" />;
-    if (hour < 22) return <Sunset size={32} className="text-white/80" />;
-    return <Moon size={32} className="text-white/80" />;
-  };
-
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 5) return 'Good Night';
-    if (hour < 12) return 'Good Morning';
-    if (hour < 17) return 'Good Afternoon';
-    if (hour < 22) return 'Good Evening';
-    return 'Late Night';
-  };
-
-  // New time-based background gradient for the hero header.
-  const getBackgroundClasses = () => {
-    const hour = new Date().getHours();
-    if (hour < 5) return "bg-gradient-to-b from-gray-900 to-black";
-    if (hour < 12) return "bg-gradient-to-b from-yellow-300 to-orange-200";
-    if (hour < 17) return "bg-gradient-to-b from-blue-400 to-blue-200";
-    if (hour < 22) return "bg-gradient-to-b from-purple-600 to-blue-900";
-    return "bg-gradient-to-b from-gray-900 to-black";
-  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -107,21 +183,19 @@ const Home = () => {
         setLoading(true);
         const [profileRes, featuredRes, recommendationsRes] = await Promise.all([
           MusicAPI.getUserProfile(),
-          MusicAPI.getFeaturedAlbums(),
-          MusicAPI.getRecommendations()
+                                                                                MusicAPI.getFeaturedAlbums(),
+                                                                                MusicAPI.getRecommendations()
         ]);
 
         setUserProfile(profileRes.data);
 
         const albumPromises = featuredRes.data.featured.map(album =>
-          MusicAPI.getAlbum(album.id)
+        MusicAPI.getAlbum(album.id)
         );
         const albumDetails = await Promise.all(albumPromises);
         setFeaturedAlbums(albumDetails.map(res => res.data));
 
-        const recs = recommendationsRes.data && recommendationsRes.data.recommendations 
-          ? recommendationsRes.data.recommendations 
-          : [];
+        const recs = recommendationsRes.data?.recommendations || [];
         setRecommendations(recs);
       } catch (error) {
         console.error('Error fetching data:', error);
@@ -175,193 +249,285 @@ const Home = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full overflow-x-hidden">
-        <Loader className="w-8 h-8 animate-spin text-accent" />
+      <div className="flex items-center justify-center h-full">
+      <motion.div
+      animate={{ rotate: 360 }}
+      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+      >
+      <Loader className="w-12 h-12 text-accent" />
+      </motion.div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-gray-400 overflow-x-hidden">
-        <p>{error}</p>
-        <button 
-          onClick={() => window.location.reload()}
-          className="mt-4 px-4 py-2 bg-accent rounded-full text-white hover:bg-accent-dark transition-colors"
-        >
-          Retry
-        </button>
+      <div className="flex flex-col items-center justify-center h-full text-gray-400">
+      <motion.div
+      initial={{ scale: 0 }}
+      animate={{ scale: 1 }}
+      transition={{ type: "spring", stiffness: 200 }}
+      >
+      <p className="text-xl mb-4">{error}</p>
+      <button
+      onClick={() => window.location.reload()}
+      className="px-6 py-3 bg-accent rounded-full text-white hover:bg-accent-dark
+      transition-all duration-300 transform hover:scale-105"
+      >
+      Retry
+      </button>
+      </motion.div>
       </div>
     );
   }
 
+  // Memoize trending text to prevent re-renders
+  const trendingText = recommendations.length > 0
+  ? `${recommendations[0].title} by ${recommendations[0].artist}`
+  : '';
+
   return (
     <div className="min-h-full w-full overflow-x-hidden">
-      {/* Hero Header with time-based background */}
-      <div className={`relative w-full ${getBackgroundClasses()}`}>
-        <div className="absolute inset-0 overflow-hidden">
-          {recommendations.length > 0 && (
-            <>
-              <img 
-                src={getImageUrl(recommendations[0].album_art || recommendations[0].track_image) + "?h=264"}
-                alt=""
-                className="w-full h-full object-cover filter blur-2xl opacity-30"
-              />
-              <div className="absolute inset-0 bg-black/40" />
-            </>
-          )}
-        </div>
+    {/* Hero Header with animated background */}
+    <AnimatedBackground>
+    <div className="relative w-full min-h-[400px]">
+    <div className="absolute inset-0 overflow-hidden">
+    {recommendations.length > 0 && (
+      <motion.img
+      src={getImageUrl(recommendations[0].album_art || recommendations[0].track_image) + "?h=264"}
+      alt=""
+      className="w-full h-full object-cover filter blur-3xl opacity-20"
+      initial={{ scale: 1.2 }}
+      animate={{ scale: 1 }}
+      transition={{ duration: 20 }}
+      />
+    )}
+    <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/50 to-black" />
+    </div>
 
-        <div className="relative z-10 p-8">
-          <div className="flex flex-col justify-end h-64">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-4"
-            >
-              <div className="flex items-center gap-3">
-                {getTimeIcon()}
-                <h5 className="text-xl text-white/80">{getGreeting()}</h5>
-              </div>
-              <div className="flex items-center gap-4">
-                {userProfile?.profile_pic && (
-                  <img 
-                    src={getImageUrl(userProfile.profile_pic) + "?h=45"}
-                    alt={userProfile.username}
-                    className="w-12 h-12 rounded-full object-cover"
-                  />
-                )}
-                <motion.h1 
-                  initial={{ scale: 0.95 }}
-                  animate={{ scale: 1 }}
-                  transition={{ type: "spring", stiffness: 100 }}
-                  className="text-5xl font-bold text-white"
-                >
-                  Welcome back, {userProfile?.username || 'Guest'}
-                </motion.h1>
-              </div>
-              {recommendations.length > 0 && (
-                isMobile ? (
-                  <MarqueeText 
-                    text={`Currently Trending: ${recommendations[0].title} by ${recommendations[0].artist}`}
-                    className="text-white/60 text-lg mt-2"
-                  />
-                ) : (
-                  <p className="text-white/60 text-lg mt-2">
-                    Currently Trending: {recommendations[0].title} by {recommendations[0].artist}
-                  </p>
-                )
-              )}
-            </motion.div>
-          </div>
-        </div>
+    <div className="relative z-10 p-8 md:p-12">
+    <div className="flex flex-col justify-end min-h-[350px]">
+    <motion.div
+    initial={{ opacity: 0, y: 30 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.8, ease: "easeOut" }}
+    className="space-y-6"
+    >
+    <div className="flex items-center gap-4">
+    <TimeIcon />
+    <motion.h5
+    className="text-2xl text-white/90 font-light"
+    initial={{ opacity: 0, x: -20 }}
+    animate={{ opacity: 1, x: 0 }}
+    transition={{ delay: 0.2 }}
+    >
+    {greeting}
+    </motion.h5>
+    </div>
+
+    <div className="flex items-center gap-6">
+    {userProfile?.profile_pic && (
+      <motion.img
+      src={getImageUrl(userProfile.profile_pic) + "?h=60"}
+      alt={userProfile.username}
+      className="w-16 h-16 rounded-full object-cover ring-4 ring-white/20"
+      whileHover={{ scale: 1.1 }}
+      transition={{ type: "spring", stiffness: 300 }}
+      />
+    )}
+    <motion.h1
+    className="text-5xl md:text-7xl font-bold text-white"
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ delay: 0.3, type: "spring", stiffness: 100 }}
+    >
+    Welcome back, {userProfile?.username || 'Guest'}
+    </motion.h1>
+    </div>
+
+    {trendingText && (
+      <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.5 }}
+      className="flex items-center gap-3"
+      >
+      <span className="text-white/60 text-lg">Currently Trending:</span>
+      <div className="flex-1 max-w-md">
+      <MarqueeText
+      text={trendingText}
+      className="text-white text-lg font-semibold"
+      speed={25}
+      />
+      </div>
+      </motion.div>
+    )}
+    </motion.div>
+    </div>
+    </div>
+    </div>
+    </AnimatedBackground>
+
+    <div className="px-6 md:px-12 pb-12 space-y-16 bg-gradient-to-b from-black to-background">
+    {/* Featured Albums */}
+    <section className="pt-12">
+    <motion.h2
+    className="text-3xl font-bold mb-8 text-white"
+    initial={{ opacity: 0, x: -20 }}
+    animate={{ opacity: 1, x: 0 }}
+    transition={{ duration: 0.5 }}
+    >
+    Featured Albums
+    </motion.h2>
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+    {featuredAlbums.map((album, index) => (
+      <motion.div
+      key={album.id}
+      initial={{ opacity: 0, y: 50 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.1, type: "spring", stiffness: 100 }}
+      whileHover={{ y: -10 }}
+      className="group relative cursor-pointer"
+      onClick={() => navigate(`/album/${album.id}`)}
+      onMouseEnter={() => setHoveredAlbum(album.id)}
+      onMouseLeave={() => setHoveredAlbum(null)}
+      >
+      <div className="relative aspect-square rounded-xl overflow-hidden shadow-2xl">
+      <motion.img
+      src={getImageUrl(album.album_art) + "?h=400"}
+      alt={album.title}
+      className="w-full h-full object-cover"
+      animate={{ scale: hoveredAlbum === album.id ? 1.1 : 1 }}
+      transition={{ duration: 0.4 }}
+      onError={(e) => {
+        e.target.onerror = null;
+        e.target.src = '/default-album-art.png';
+      }}
+      />
+      <motion.div
+      className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: hoveredAlbum === album.id ? 1 : 0 }}
+      transition={{ duration: 0.3 }}
+      />
+
+      {/* Fixed Play Button - Bottom Right */}
+      <AnimatePresence>
+      {hoveredAlbum === album.id && (
+        <motion.button
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 200 }}
+        onClick={(e) => handlePlayAlbum(album.id, e)}
+        className="absolute bottom-4 right-4 w-12 h-12 bg-accent rounded-full
+        flex items-center justify-center shadow-xl hover:bg-accent-dark
+        transition-colors"
+        >
+        {currentTrack?.album_id === album.id && isPlaying ? (
+          <Pause className="text-white" size={24} />
+        ) : (
+          <Play className="text-white ml-1" size={24} />
+        )}
+        </motion.button>
+      )}
+      </AnimatePresence>
       </div>
 
-      <div className="px-8 pb-8 space-y-12">
-        {/* Featured Albums */}
-        <section>
-          <h2 className="text-2xl font-bold mb-6 text-white">Featured Albums</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            {featuredAlbums.map((album, index) => (
-              <motion.div
-                key={album.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-                whileHover={{ scale: 1.05 }}
-                className="group relative cursor-pointer"
-                onClick={() => navigate(`/album/${album.id}`)}
-              >
-                <div className="relative aspect-square rounded-lg overflow-hidden">
-                  <img 
-                    src={getImageUrl(album.album_art) + "?h=264"}
-                    alt={album.title}
-                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.src = '/default-album-art.png';
-                    }}
-                  />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={(e) => handlePlayAlbum(album.id, e)}
-                    className="absolute bottom-4 right-4 w-12 h-12 bg-accent rounded-full 
-                             flex items-center justify-center opacity-0 group-hover:opacity-100 
-                             transition-all duration-300 transform translate-y-4 
-                             group-hover:translate-y-0"
-                  >
-                    {currentTrack?.album_id === album.id && isPlaying ? (
-                      <Pause className="text-white" size={24} />
-                    ) : (
-                      <Play className="text-white ml-1" size={24} />
-                    )}
-                  </motion.button>
-                </div>
-                <div className="mt-2">
-                  <h3 className="font-semibold truncate text-white">{album.title}</h3>
-                  <p className="text-sm text-gray-400 truncate">{album.artist}</p>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </section>
+      <motion.div
+      className="mt-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: index * 0.1 + 0.2 }}
+      >
+      <h3 className="font-bold text-lg text-white truncate">{album.title}</h3>
+      <p className="text-sm text-gray-400 truncate mt-1">{album.artist}</p>
+      </motion.div>
+      </motion.div>
+    ))}
+    </div>
+    </section>
 
-        {/* Recommended for You */}
-        <section>
-          <h2 className="text-2xl font-bold mb-6 text-white">Recommended for You</h2>
-          {recommendations.length === 0 ? (
-            <p className="text-gray-400">No recommendations available. Try exploring some tracks!</p>
-          ) : (
-            <div className="grid gap-2">
-              {recommendations.map((track, index) => (
-                <motion.div
-                  key={track.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  whileHover={{ scale: 1.01 }}
-                  className="bg-surface/50 hover:bg-surface p-4 rounded-lg flex items-center gap-4 
-                           group transition-colors duration-200 cursor-pointer"
-                  onClick={() => navigate(`/track/${track.id}`)}
-                >
-                  <div className="relative aspect-square w-16 rounded-md overflow-hidden">
-                    <img 
-                      src={getImageUrl(track.album_art || track.track_image) + "?h=60"}
-                      alt={track.title}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.src = '/default-album-art.png';
-                      }}
-                    />
-                    <button
-                      onClick={(e) => handlePlayTrack(track, e)}
-                      className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 
-                               transition-opacity duration-300 flex items-center justify-center"
-                    >
-                      {currentTrack?.id === track.id && isPlaying ? (
-                        <Pause className="text-white" size={20} />
-                      ) : (
-                        <Play className="text-white ml-1" size={20} />
-                      )}
-                    </button>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    {isMobile ? (
-                      <MarqueeText text={track.title} className="font-medium text-white w-48" />
-                    ) : (
-                      <div className="font-medium truncate group-hover:text-white">{track.title}</div>
-                    )}
-                    <p className="text-sm text-gray-400 truncate">{track.artist}</p>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </section>
+    {/* Recommended for You */}
+    <section>
+    <motion.h2
+    className="text-3xl font-bold mb-8 text-white"
+    initial={{ opacity: 0, x: -20 }}
+    animate={{ opacity: 1, x: 0 }}
+    transition={{ duration: 0.5 }}
+    >
+    Recommended for You
+    </motion.h2>
+    {recommendations.length === 0 ? (
+      <motion.p
+      className="text-gray-400 text-lg"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      >
+      No recommendations available. Try exploring some tracks!
+      </motion.p>
+    ) : (
+      <div className="grid gap-3">
+      {recommendations.map((track, index) => (
+        <motion.div
+        key={track.id}
+        initial={{ opacity: 0, x: -50 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ delay: index * 0.05, type: "spring", stiffness: 100 }}
+        whileHover={{ x: 10 }}
+        className="bg-surface/30 backdrop-blur-sm hover:bg-surface/60 p-4 rounded-xl
+        flex items-center gap-4 group transition-all duration-300 cursor-pointer
+        border border-white/5 hover:border-white/10"
+        onClick={() => navigate(`/track/${track.id}`)}
+        >
+        <motion.div
+        className="relative aspect-square w-20 rounded-lg overflow-hidden shadow-lg"
+        whileHover={{ scale: 1.05 }}
+        >
+        <img
+        src={getImageUrl(track.album_art || track.track_image) + "?h=80"}
+        alt={track.title}
+        className="w-full h-full object-cover"
+        onError={(e) => {
+          e.target.onerror = null;
+          e.target.src = '/default-album-art.png';
+        }}
+        />
+        <motion.button
+        onClick={(e) => handlePlayTrack(track, e)}
+        className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100
+        transition-opacity duration-300 flex items-center justify-center"
+        whileHover={{ backgroundColor: "rgba(0,0,0,0.8)" }}
+        >
+        {currentTrack?.id === track.id && isPlaying ? (
+          <Pause className="text-white" size={24} />
+        ) : (
+          <Play className="text-white ml-1" size={24} />
+        )}
+        </motion.button>
+        </motion.div>
+
+        <div className="flex-1 min-w-0">
+        <motion.div
+        className="font-semibold text-lg text-white group-hover:text-accent transition-colors"
+        >
+        <span className="truncate block">{track.title}</span>
+        </motion.div>
+        <p className="text-sm text-gray-400 mt-1">{track.artist}</p>
+        </div>
+
+        <motion.div
+        className="text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"
+        whileHover={{ scale: 1.2 }}
+        >
+        <Play size={20} />
+        </motion.div>
+        </motion.div>
+      ))}
       </div>
+    )}
+    </section>
+    </div>
     </div>
   );
 };
