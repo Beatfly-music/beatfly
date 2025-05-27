@@ -4,7 +4,7 @@ import { Outlet } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import TitleBar from './TitleBar';
 import Sidebar from './Sidebar';
-import Player from './Player';
+import Player from './Player/index';
 
 // Create contexts for sidebar and responsive state
 export const SidebarContext = createContext(null);
@@ -31,23 +31,23 @@ export const useResponsive = () => {
 const MainLayout = () => {
   // Sidebar collapse state
   const [isCollapsed, setIsCollapsed] = useState(false);
-  
+
   // Responsive state
   const [isMobile, setIsMobile] = useState(false);
-  
+
   // Check if device is mobile on mount and resize
   useEffect(() => {
     const checkIfMobile = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
     };
-    
+
     // Initial check
     checkIfMobile();
-    
+
     // Add resize listener
     window.addEventListener('resize', checkIfMobile);
-    
+
     return () => {
       window.removeEventListener('resize', checkIfMobile);
     };
@@ -59,7 +59,7 @@ const MainLayout = () => {
         <div className="flex flex-col h-screen bg-background">
           {/* Only show TitleBar on desktop */}
           {!isMobile && <TitleBar />}
-          
+
           {/* Main content wrapper */}
           <div className="flex flex-1 overflow-hidden">
             {/* Main content area with conditional margin for desktop */}
@@ -74,7 +74,7 @@ const MainLayout = () => {
               <Outlet />
             </motion.main>
           </div>
-          
+
           {/* Player & Sidebar */}
           <Player />
           <Sidebar />
